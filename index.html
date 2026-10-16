@@ -12,9 +12,13 @@
         .subtitle { color: #666; margin-bottom: 25px; }
         
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; margin-bottom: 30px; }
-        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; }
-        .card-title { font-size: 16px; font-weight: bold; margin: 0 0 15px 0; color: #222; }
+        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; color: inherit; }
+        .card:hover { transform: translateY(-4px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); border-left: 4px solid #1a73e8; }
+        .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+        .card-title { font-size: 16px; font-weight: bold; color: #222; }
+        .link-icon { font-size: 14px; color: #1a73e8; }
         .price-tag { font-size: 24px; font-weight: bold; color: #1a73e8; }
+        .hint { font-size: 12px; color: #888; margin-top: 8px; }
 
         .chart-box { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); height: 500px; }
     </style>
@@ -22,7 +26,7 @@
 <body>
     <div class="container">
         <h1>Hotel-Preisvergleich Türkische Riviera (Juni 2027)</h1>
-        <div class="subtitle">Täglicher, automatisierter Gesamtpreis-Check (2 Erw., All Inclusive, ab FMO/BRE).</div>
+        <div class="subtitle">Täglicher, automatisierter Gesamtpreis-Check (2 Erw., All Inclusive, ab FMO/BRE). Klicke auf ein Hotel, um direkt zum Angebot zu gelangen.</div>
 
         <div class="grid" id="hotelGrid"></div>
 
@@ -32,15 +36,40 @@
     </div>
 
     <script>
+        // Hotels inklusive der originalen HolidayCheck-Angebotslinks
         const hotels = [
-            { name: "Dream World Palace" },
-            { name: "Hotel Delphin Diva" },
-            { name: "Dream Fun World" },
-            { name: "Hotel Delphin Imperial" },
-            { name: "Lago Hotel" },
-            { name: "Aydinbey Kings Palace & Spa" },
-            { name: "Titanic Deluxe Lara" },
-            { name: "Sea Shell Resort & Spa" }
+            { 
+                name: "Dream World Palace", 
+                url: "https://www.holidaycheck.de/ho/angebote-dream-world-palace-hotel/5f99a171-6caa-4aff-aa4b-d7dbf273672d/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a&hcdid=f5c87011-c648-41d0-8e99-b2cc16cb70e6" 
+            },
+            { 
+                name: "Hotel Delphin Diva", 
+                url: "https://www.holidaycheck.de/ho/angebote-hotel-delphin-diva/985cf6d5-a336-3c25-b3ed-44c54a262db6/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a&hcdid=146ad779-248d-43f7-8143-9bf0e7f6cfe9" 
+            },
+            { 
+                name: "Dream Fun World", 
+                url: "https://www.holidaycheck.de/ho/angebote-dream-fun-world/3105f0fc-dd6f-4317-b536-933a40650f16/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a&hcdid=516308f5-ae64-461a-bc03-0cfeadf059e2" 
+            },
+            { 
+                name: "Hotel Delphin Imperial", 
+                url: "https://www.holidaycheck.de/ho/angebote-hotel-delphin-imperial/7ce75659-2749-3030-bb0b-73785de4852a/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a&hcdid=1e188869-e757-422f-a7b7-2e1e82c104a9" 
+            },
+            { 
+                name: "Lago Hotel", 
+                url: "https://www.holidaycheck.de/ho/angebote-lago-hotel/2e44d958-7e5e-4423-92b2-84bb298826b0/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a&hcdid=74bdf8cd-b80a-4d82-9f7a-37f9d48ac126" 
+            },
+            { 
+                name: "Aydinbey Kings Palace & Spa", 
+                url: "https://www.holidaycheck.de/ho/angebote-aydinbey-kings-palace-spa/859de05c-795d-3c57-8271-ee31eca92fe1/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a&hcdid=eb1ef46f-ea63-40ab-9b69-bc0cdb68b6ab" 
+            },
+            { 
+                name: "Titanic Deluxe Lara", 
+                url: "https://www.holidaycheck.de/ho/angebote-titanic-deluxe-lara/94cad83d-4b34-34b0-a334-cf80482827f3/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a&hcdid=73b4ffbb-d448-4665-aada-e130765e5521" 
+            },
+            { 
+                name: "Sea Shell Resort & Spa", 
+                url: "https://www.holidaycheck.de/ho/angebote-sea-shell-resort-spa/33f5eb64-f7da-36d7-ace0-ff41d1bb9337/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a&hcdid=46b24cd8-1afb-4d4f-9ff8-031819bd05b2" 
+            }
         ];
 
         async function init() {
@@ -68,16 +97,24 @@
                 }
             });
 
-            // Grid ohne Bilder rendern
+            // Grid mit klickbaren Karten (Links zu HolidayCheck) rendern
             const grid = document.getElementById('hotelGrid');
             grid.innerHTML = "";
             hotels.forEach(h => {
                 const info = latestPrices[h.name] || { price: "Wartet auf Daten..." };
-                const card = document.createElement('div');
+                const card = document.createElement('a');
                 card.className = 'card';
+                card.href = h.url;
+                card.target = '_blank'; // Öffnet sich direkt in einem neuen Tab
                 card.innerHTML = `
-                    <div class="card-title">${h.name}</div>
-                    <div class="price-tag">${info.price}</div>
+                    <div>
+                        <div class="card-top">
+                            <div class="card-title">${h.name}</div>
+                            <div class="link-icon">🔗 Ansehen</div>
+                        </div>
+                        <div class="price-tag">${info.price}</div>
+                    </div>
+                    <div class="hint">Klicken zum HolidayCheck-Angebot &rarr;</div>
                 `;
                 grid.appendChild(card);
             });
