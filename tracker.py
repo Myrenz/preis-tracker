@@ -7,8 +7,8 @@ from datetime import datetime
 
 API_KEY = os.environ.get("SCRAPER_API_KEY")
 
-# Deine exakte Such-URL mit allen Filtern (Abflughafen, Datum, Dauer etc.)
-TARGET_URL = "https://www.holidaycheck.de/ho/angebote-dream-world-palace-hotel/5f99a171-6caa-4aff-a4db-d7dbf273672d/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-o8hcdid=153e2126-7876-4442-b64c-b17a61d0fef5"
+# Die saubere Hauptseite des Dream World Palace Hotels bei HolidayCheck
+TARGET_URL = "https://www.holidaycheck.de/ho/angebote-dream-world-palace-hotel/5f99a171-6caa-4aff-a4db-d7dbf273672d"
 
 def hole_preise():
     zeitstempel = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -17,15 +17,14 @@ def hole_preise():
         print("FEHLER: SCRAPER_API_KEY fehlt in den GitHub Secrets!")
         return
 
-    print("Frage HolidayCheck-Suchseite über ScraperAPI ab...")
+    print("Frage HolidayCheck-Hotelübersicht über ScraperAPI ab...")
 
-    # Konfiguration für ScraperAPI: Lädt die Seite im echten Browser, wartet 8 Sek. auf JavaScript
     payload = {
         'api_key': API_KEY,
         'url': TARGET_URL,
         'render': 'true',
         'wait_for_selector': 'body',
-        'wait': '8000',
+        'wait': '6000',
         'country_code': 'de',
         'premium': 'true'
     }
@@ -38,25 +37,17 @@ def hole_preise():
             soup = BeautifulSoup(response.text, "html.parser")
             text_seite = soup.get_text(separator=" ")
 
-            # Sucht nach allen Preisangaben mit Euro-Zeichen oder in Zahlenformaten
-            rohe_preise = re.findall(r'(\d{1,2}\.\d{3}|\d{3,4})\s*€', text_seite)
+            # Sucht nach Preisen auf der Seite (z.B. Beträge im realistischen Pauschalreise-Bereich)
+            rohe_preise = re.findall(r'\b([1-5]\d{3})\b', text_seite)
+
+            alle_preise = [int(p) for p in rohe_preise]
             
-            # Alternativ: Suche nach reinen Zahlen im Text, die wie Reise-Gesamtpreise aussehen
-            if not rohe_preise:
-                rohe_preise = re.findall(r'\b([1-5]\d{3})\b', text_seite)
-
-            # Bereinigt und konvertiert die gefundenen Preise
-            alle_preise = []
-            for p in rohe_preise:
-                sauber = int(p.replace('.', '').replace('€', '').strip())
-                alle_preise.append(sauber)
-
-            # STRIKTER FILTER: Nur realistische Gesamtpreise für die Pauschalreise (zwischen 1.000 € und 5.000 €)
+            # Filtert realistische Gesamtpreise zwischen 1.000 € und 5.000 €
             gueltige_preise = [pr for pr in alle_preise if 1000 <= pr <= 5000]
 
             if gueltige_preise:
                 bester_preis = min(gueltige_preise)
-                details = f"Gefundene echte Preise: {sorted(list(set(gueltige_preise)))[:5]}"
+                details = f"Gefundene Preise: {sorted(list(set(gueltige_preise)))[:5]}"
                 print(f"Erfolg! Günstigster Gesamtpreis: {bester_preis} EUR")
             else:
                 bester_preis = "Keine passenden Gesamtpreise"
