@@ -12,12 +12,9 @@
         .subtitle { color: #666; margin-bottom: 25px; }
         
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; margin-bottom: 30px; }
-        .card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); display: flex; flex-direction: column; }
-        .card-img-container { width: 100%; height: 160px; background: #e0e0e0; position: relative; }
-        .card img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .card-body { padding: 15px; display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1; }
-        .card-title { font-size: 15px; font-weight: bold; margin: 0 0 10px 0; color: #222; }
-        .price-tag { font-size: 20px; font-weight: bold; color: #1a73e8; }
+        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; }
+        .card-title { font-size: 16px; font-weight: bold; margin: 0 0 15px 0; color: #222; }
+        .price-tag { font-size: 24px; font-weight: bold; color: #1a73e8; }
 
         .chart-box { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); height: 500px; }
     </style>
@@ -35,4 +32,89 @@
     </div>
 
     <script>
-        // Feste Liste der 8 Hotels mit direkten, originalen HolidayCheck-V
+        const hotels = [
+            { name: "Dream World Palace" },
+            { name: "Hotel Delphin Diva" },
+            { name: "Dream Fun World" },
+            { name: "Hotel Delphin Imperial" },
+            { name: "Lago Hotel" },
+            { name: "Aydinbey Kings Palace & Spa" },
+            { name: "Titanic Deluxe Lara" },
+            { name: "Sea Shell Resort & Spa" }
+        ];
+
+        async function init() {
+            const csvRes = await fetch('preishistorie.csv?' + new Date().getTime());
+            const csvText = await csvRes.text();
+            const rows = csvText.split('\n').slice(1);
+
+            const latestPrices = {};
+            const historyData = {};
+
+            rows.forEach(row => {
+                const cols = row.split(',');
+                if (cols.length >= 3 && cols[0].trim() !== "") {
+                    const time = cols[0].trim();
+                    const hotelName = cols[1].trim();
+                    const price = parseFloat(cols[2].trim());
+
+                    latestPrices[hotelName] = { price: isNaN(price) ? cols[2].trim() : price + " €" };
+
+                    if (!historyData[hotelName]) historyData[hotelName] = { times: [], prices: [] };
+                    if (!historyData[hotelName].times.includes(time)) {
+                        historyData[hotelName].times.push(time);
+                        historyData[hotelName].prices.push(isNaN(price) ? null : price);
+                    }
+                }
+            });
+
+            // Grid ohne Bilder rendern
+            const grid = document.getElementById('hotelGrid');
+            grid.innerHTML = "";
+            hotels.forEach(h => {
+                const info = latestPrices[h.name] || { price: "Wartet auf Daten..." };
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <div class="card-title">${h.name}</div>
+                    <div class="price-tag">${info.price}</div>
+                `;
+                grid.appendChild(card);
+            });
+
+            // Chart.js Diagramm
+            const datasets = [];
+            const colors = ['#1a73e8', '#ea4335', '#fbbc05', '#34a853', '#ff6d01', '#46bdc6', '#7b1fa2', '#e91e63'];
+            let colorIndex = 0;
+
+            for (const [hotelName, data] of Object.entries(historyData)) {
+                datasets.push({
+                    label: hotelName,
+                    data: data.prices,
+                    borderColor: colors[colorIndex % colors.length],
+                    backgroundColor: 'transparent',
+                    borderWidth: 2.5,
+                    tension: 0.2,
+                    spanGaps: true
+                });
+                colorIndex++;
+            }
+
+            const allTimes = [...new Set(Object.values(historyData).flatMap(d => d.times))].sort();
+
+            const ctx = document.getElementById('comparisonChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: { labels: allTimes, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { title: { display: true, text: 'Preisentwicklung im direkten Vergleich (EUR)' } },
+                    scales: { y: { ticks: { callback: v => v + ' €' } } }
+                }
+            });
+        }
+        init();
+    </script>
+</body>
+</html>
