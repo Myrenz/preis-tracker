@@ -35,16 +35,40 @@
     </div>
 
     <script>
-        // Feste Liste aller Hotels mit individuellen, stabilen Bildern
+        // Echte Original-Bilder direkt aus den HolidayCheck-Daten der 8 Hotels
         const hotels = [
-            { name: "Dream World Palace", image: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=300&auto=format&fit=crop&q=80" },
-            { name: "Hotel Delphin Diva", image: "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=300&auto=format&fit=crop&q=80" },
-            { name: "Dream Fun World", image: "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=300&auto=format&fit=crop&q=80" },
-            { name: "Hotel Delphin Imperial", image: "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=300&auto=format&fit=crop&q=80" },
-            { name: "Lago Hotel", image: "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=300&auto=format&fit=crop&q=80" },
-            { name: "Aydinbey Kings Palace & Spa", image: "https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=300&auto=format&fit=crop&q=80" },
-            { name: "Titanic Deluxe Lara", image: "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=300&auto=format&fit=crop&q=80" },
-            { name: "Sea Shell Resort & Spa", image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=300&auto=format&fit=crop&q=80" }
+            { 
+                name: "Dream World Palace", 
+                image: "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fi.giatamedia.com%2Fs.php%3Fuid%3D1035%26source%3Dxmlpool2%26size%3D800%26cid%3D112007%26iid%3D137248819" 
+            },
+            { 
+                name: "Hotel Delphin Diva", 
+                image: "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fi.giatamedia.com%2Fs.php%3Fuid%3D1035%26source%3Dxmlpool2%26size%3D800%26cid%3D24352%26iid%3D72347130" 
+            },
+            { 
+                name: "Dream Fun World", 
+                image: "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fi.giatamedia.com%2Fs.php%3Fuid%3D1035%26source%3Dxmlpool2%26size%3D800%26cid%3D110452%26iid%3D136777641" 
+            },
+            { 
+                name: "Hotel Delphin Imperial", 
+                image: "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fi.giatamedia.com%2Fs.php%3Fuid%3D1035%26source%3Dxmlpool2%26size%3D800%26cid%3D25178%26iid%3D79456210" 
+            },
+            { 
+                name: "Lago Hotel", 
+                image: "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fi.giatamedia.com%2Fs.php%3Fuid%3D1035%26source%3Dxmlpool2%26size%3D800%26cid%3D111892%26iid%3D137119022" 
+            },
+            { 
+                name: "Aydinbey Kings Palace & Spa", 
+                image: "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fi.giatamedia.com%2Fs.php%3Fuid%3D1035%26source%3Dxmlpool2%26size%3D800%26cid%3D24146%26iid%3D136902608" 
+            },
+            { 
+                name: "Titanic Deluxe Lara", 
+                image: "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fi.giatamedia.com%2Fs.php%3Fuid%3D1035%26source%3Dxmlpool2%26size%3D800%26cid%3D22928%26iid%3D69099013" 
+            },
+            { 
+                name: "Sea Shell Resort & Spa", 
+                image: "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fi.giatamedia.com%2Fs.php%3Fuid%3D1035%26source%3Dxmlpool2%26size%3D800%26cid%3D23603%26iid%3D118408120" 
+            }
         ];
 
         async function init() {
@@ -72,7 +96,7 @@
                 }
             });
 
-            // Grid mit individuellen Hotelbildern rendern
+            // Grid mit echten Hotelbildern rendern
             const grid = document.getElementById('hotelGrid');
             grid.innerHTML = "";
             hotels.forEach(h => {
