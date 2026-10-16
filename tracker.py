@@ -1,121 +1,82 @@
-#!/usr/bin/env python3
-"""HolidayCheck-Preistracker: ScraperAPI -> Parser -> Google-Sheet-Webhook."""
-import csv, json, os, re, statistics, sys, time
-from datetime import datetime, timezone
-from pathlib import Path
-
+import csv
+import os
 import requests
-from bs4 import BeautifulSoup
+from datetime import datetime
 
-API_KEY = os.environ["SCRAPER_API_KEY"]
-WEBHOOK = os.environ["SHEET_WEBHOOK_URL"]
-TOKEN = os.environ["SHEET_TOKEN"]
+API_KEY = os.environ.get("SCRAPER_API_KEY")
 
-DEBUG_DIR = Path("debug")
-LOCAL_CSV = Path("preishistorie_local.csv")
-PRICE_RE = re.compile(r"(\d{1,3}(?:\.\d{3})+|\d{3,5})\s*(?:€|EUR)")
-MIN_PLAUSIBLE, MAX_PLAUSIBLE = 300, 15000
-WAITS = [20, 35]  # Sekunden Wartezeit für nachgeladene Angebote (1. und 2. Versuch)
+# Deine gefundene direkte API-URL von HolidayCheck
+API_URL = "https://www.holidaycheck.de/api/vacancies;currency=EUR;offerIds=%5B%22501f1bd5-bcf8-47bc-a26f-8ba0aafd4b73%22%2C%2250192648-1a42-486f-a8d2-98ae68ec2af0%22%2C%22501fc602-280b-4c49-b23f-b1304c00d98c%22%2C%22161e82c5-a8af-47bc-b9da-b929ff2dc95f%22%5D"
 
+def hole_preise():
+    zeitstempel = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    if not API_KEY:
+        print("FEHLER: SCRAPER_API_KEY fehlt in den GitHub Secrets!")
+        return
 
-def fetch(url: str, wait: int) -> str:
-    last = "unbekannt"
-    for i in range(1, 3):
-        try:
-            r = requests.get(
-                "https://api.scraperapi.com/",
-                params={
-                    "api_key": API_KEY,
-                    "url": url,
-                    "render": "true",
-                    "country_code": "de",
-                    "premium": "true",
-                },
-                headers={
-                    "x-sapi-instruction_set": json.dumps([{"type": "wait", "value": wait}])
-                },
-                timeout=240,
-            )
-            if r.status_code == 200 and len(r.text) > 20000:
-                return r.text
-            last = f"HTTP {r.status_code}, {len(r.text)} Bytes: {r.text[:200]}"
-        except requests.RequestException as e:
-            last = str(e)
-        print(f"  Abruf-Versuch {i} fehlgeschlagen: {last}", file=sys.stderr)
-        time.sleep(10)
-    raise RuntimeError(f"Abruf fehlgeschlagen: {last}")
+    print("Frage HolidayCheck-API über ScraperAPI ab...")
 
+    # ScraperAPI leitet den API-Aufruf über eine deutsche IP weiter
+    payload = {
+        'api_key': API_KEY,
+        'url': API_URL,
+        'country_code': 'de',
+        'premium': 'true'
+    }
 
-def parse_prices(html: str, selector: str = "") -> list[int]:
-    soup = BeautifulSoup(html, "html.parser")
-    if selector:
-        text = " | ".join(el.get_text(" ", strip=True) for el in soup.select(selector))
-    else:
-        for t in soup(["script", "style", "noscript"]):
-            t.decompose()
-        text = soup.get_text(" ", strip=True)
-    prices = []
-    for m in PRICE_RE.finditer(text):
-        v = int(m.group(1).replace(".", ""))
-        if MIN_PLAUSIBLE <= v <= MAX_PLAUSIBLE:
-            prices.append(v)
-    return prices
+    try:
+        response = requests.get('https://api.scraperapi.com/', params=payload, timeout=60)
+        print(f"API Antwort-Status: {response.status_code}")
 
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Versucht die Preise aus der JSON-Antwort zu fischen
+            preise = []
+            
+            # Je nach Struktur der API-Antwort durchsuchen wir die JSON-Daten
+            # (Beispielhaft angepasst an typische Veranstalter-APIs)
+            if isinstance(data, list):
+                items = data
+            elif isinstance(data, dict):
+                items = data.get('vacancies', data.get('offers', [data]))
+            else:
+                items = []
 
-def get_prices(name: str, url: str, selector: str) -> list[int]:
-    for wait in WAITS:
-        print(f"  Warte {wait}s auf Angebote ...")
-        html = fetch(url, wait)
-        (DEBUG_DIR / f"{name}.html").write_text(html, encoding="utf-8")
-        prices = parse_prices(html, selector)
-        if prices:
-            return prices
-        print("  Noch keine Preise im HTML.", file=sys.stderr)
-    raise RuntimeError("Keine Preise gefunden (HTML in debug/ gespeichert)")
+            for item in items:
+                # Holt den Preis (oft als 'price', 'totalPrice' oder 'amount' hinterlegt)
+                preis = item.get('price', item.get('totalPrice', item.get('amount')))
+                if preis:
+                    preise.append(int(float(preis)))
 
+            # Falls direkt keine Liste zurückkommt, suchen wir im rohen JSON nach Zahlenwerten
+            if not preise:
+                import re
+                rohe_zahlen = re.findall(r'"price":\s*([0-9.]+)', response.text)
+                preise = [int(float(p)) for p in rohe_zahlen if int(float(p)) > 300]
 
-def post_row(row: list) -> bool:
-    for i in range(1, 4):
-        try:
-            r = requests.post(WEBHOOK, json={"token": TOKEN, "row": row}, timeout=60)
-            if r.ok and r.text.strip() == "ok":
-                return True
-            print(f"  Webhook-Antwort: {r.status_code} {r.text[:100]}", file=sys.stderr)
-        except requests.RequestException as e:
-            print(f"  Webhook-Fehler: {e}", file=sys.stderr)
-        time.sleep(5 * i)
-    return False
+            if preise:
+                bester_preis = min(preise)
+                eintrag = [zeitstempel, "Dream World Palace (API)", bester_preis, str(preise)]
+                print(f"Erfolg! Günstigster Preis aus API: {bester_preis} EUR")
+            else:
+                eintrag = [zeitstempel, "Dream World Palace (API)", "Keine Preise in JSON", "-"]
+                print("Antwort erhalten, aber keine Preise im JSON gefunden.")
+                # Speichert die JSON-Antwort zur Kontrolle
+                with open("letzte_antwort.json", "w", encoding="utf-8") as f:
+                    f.write(response.text)
+        else:
+            eintrag = [zeitstempel, "Dream World Palace (API)", f"HTTP {response.status_code}", "-"]
+            print(f"Fehler: {response.status_code} - {response.text[:200]}")
 
+        # In CSV schreiben
+        with open("preishistorie.csv", mode="a", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            writer.writerow(eintrag)
 
-def main() -> int:
-    searches = json.loads(Path("searches.json").read_text(encoding="utf-8"))
-    DEBUG_DIR.mkdir(exist_ok=True)
-    failures = 0
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-    for s in searches:
-        name = s["name"]
-        print(f"→ {name}", flush=True)
-        try:
-            prices = get_prices(name, s["url"], s.get("selector", ""))
-            row = [ts, name, min(prices), int(statistics.median(prices)), len(prices), s["url"]]
-            print(f"  min={row[2]} median={row[3]} n={row[4]}")
-
-            new = not LOCAL_CSV.exists()
-            with LOCAL_CSV.open("a", newline="", encoding="utf-8") as f:
-                w = csv.writer(f)
-                if new:
-                    w.writerow(["timestamp_utc", "name", "min_preis", "median_preis", "anzahl", "url"])
-                w.writerow(row)
-
-            if not post_row(row):
-                raise RuntimeError("Webhook nicht erreichbar")
-        except Exception as e:
-            failures += 1
-            print(f"  FEHLER: {e}", file=sys.stderr)
-
-    return 1 if failures else 0
-
+    except Exception as e:
+        print(f"Fehler beim API-Abruf: {e}")
 
 if __name__ == "__main__":
-    sys.exit(main())
+    hole_preise()
