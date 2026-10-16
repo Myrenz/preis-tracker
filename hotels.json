@@ -1,0 +1,42 @@
+[
+  {
+    "id": "5f99a171-6caa-4aff-aa4b-d7dbf273672d",
+    "name": "Dream World Palace",
+    "image": "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fi.giatamedia.com%2Fs.php%3Fuid%3D1035%26source%3Dxmlpool2%26size%3D800%26cid%3D112007%26iid%3D137248819"
+  },
+  {
+    "id": "985cf6d5-a336-3c25-b3ed-44c54a262db6",
+    "name": "Hotel Delphin Diva",
+    "image": "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fimages.holidaycheck.com%2Fdata%2FurgcH%2Fimages%2Fdefault%2F4%2F4%2F4%2F4%2F4%2F4%2F4%2F4%2F4.jpg"
+  },
+  {
+    "id": "3105f0fc-dd6f-4317-b536-933a40650f16",
+    "name": "Dream Fun World",
+    "image": "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fimages.holidaycheck.com%2Fdata%2FurgcH%2Fimages%2Fdefault%2F5%2F5%2F5%2F5%2F5%2F5%2F5%2F5%2F5.jpg"
+  },
+  {
+    "id": "7ce75659-2749-3030-bb0b-73785de4852a",
+    "name": "Hotel Delphin Imperial",
+    "image": "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fimages.holidaycheck.com%2Fdata%2FurgcH%2Fimages%2Fdefault%2F6%2F6%2F6%2F6%2F6%2F6%2F6%2F6%2F6.jpg"
+  },
+  {
+    "id": "2e44d958-7e5e-4423-92b2-84bb298826b0",
+    "name": "Lago Hotel",
+    "image": "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fimages.holidaycheck.com%2Fdata%2FurgcH%2Fimages%2Fdefault%2F1%2F3%2F7%2F2%2F4%2F8%2F8%2F1%2F137248819.jpg"
+  },
+  {
+    "id": "859de05c-795d-3c57-8271-ee31eca92fe1",
+    "name": "Aydinbey Kings Palace & Spa",
+    "image": "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fimages.holidaycheck.com%2Fdata%2FurgcH%2Fimages%2Fdefault%2F2%2F2%2F2%2F2%2F2%2F2%2F2%2F2%2F2.jpg"
+  },
+  {
+    "id": "94cad83d-4b34-34b0-a334-cf80482827f3",
+    "name": "Titanic Deluxe Lara",
+    "image": "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fimages.holidaycheck.com%2Fdata%2FurgcH%2Fimages%2Fdefault%2F3%2F3%2F3%2F3%2F3%2F3%2F3%2F3%2F3.jpg"
+  },
+  {
+    "id": "33f5eb64-f7da-36d7-ace0-ff41d1bb9337",
+    "name": "Sea Shell Resort & Spa",
+    "image": "https://media-cdn.holidaycheck.com/image/fetch/w_300,h_200,c_fill,q_auto,f_auto/https%3A%2F%2Fimages.holidaycheck.com%2Fdata%2FurgcH%2Fimages%2Fdefault%2F7%2F7%2F7%2F7%2F7%2F7%2F7%2F7%2F7.jpg"
+  }
+]
