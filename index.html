@@ -35,10 +35,19 @@
     </div>
 
     <script>
-        async function init() {
-            const hotelRes = await fetch('hotels.json');
-            const hotels = await hotelRes.json();
+        // Feste Liste aller Hotels mit individuellen, stabilen Bildern
+        const hotels = [
+            { name: "Dream World Palace", image: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=300&auto=format&fit=crop&q=80" },
+            { name: "Hotel Delphin Diva", image: "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=300&auto=format&fit=crop&q=80" },
+            { name: "Dream Fun World", image: "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=300&auto=format&fit=crop&q=80" },
+            { name: "Hotel Delphin Imperial", image: "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=300&auto=format&fit=crop&q=80" },
+            { name: "Lago Hotel", image: "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=300&auto=format&fit=crop&q=80" },
+            { name: "Aydinbey Kings Palace & Spa", image: "https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=300&auto=format&fit=crop&q=80" },
+            { name: "Titanic Deluxe Lara", image: "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=300&auto=format&fit=crop&q=80" },
+            { name: "Sea Shell Resort & Spa", image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=300&auto=format&fit=crop&q=80" }
+        ];
 
+        async function init() {
             const csvRes = await fetch('preishistorie.csv?' + new Date().getTime());
             const csvText = await csvRes.text();
             const rows = csvText.split('\n').slice(1);
@@ -63,7 +72,7 @@
                 }
             });
 
-            // Grid mit sauberen Hotelkarten rendern
+            // Grid mit individuellen Hotelbildern rendern
             const grid = document.getElementById('hotelGrid');
             grid.innerHTML = "";
             hotels.forEach(h => {
@@ -72,7 +81,7 @@
                 card.className = 'card';
                 card.innerHTML = `
                     <div class="card-img-container">
-                        <img src="${h.image}" alt="" onerror="this.src='https://images.unsplash.com/photo-1566073771259-6a8506099945?w=300&auto=format&fit=crop&q=60'">
+                        <img src="${h.image}" alt="${h.name}">
                     </div>
                     <div class="card-body">
                         <div class="card-title">${h.name}</div>
@@ -82,7 +91,7 @@
                 grid.appendChild(card);
             });
 
-            // Chart.js Diagramm sauber aufbauen
+            // Chart.js Diagramm
             const datasets = [];
             const colors = ['#1a73e8', '#ea4335', '#fbbc05', '#34a853', '#ff6d01', '#46bdc6', '#7b1fa2', '#e91e63'];
             let colorIndex = 0;
