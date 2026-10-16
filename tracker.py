@@ -16,7 +16,7 @@ REFERER_URL = (
     "duration:7,returnDate:2027-06-30,rooms:a-a"
 )
 
-# Exakte Such-Nutzlast (POST Body) aus deinen Browser-Entwicklertools
+# Exakte Such-Nutzlast (POST Body) aus den Browser-Entwicklertools
 SEARCH_PAYLOAD = {
     "body": {
         "facets": {
@@ -162,8 +162,8 @@ def berechne_angebots_infos(angebot):
 
 
 def sende_post_anfrage():
-    """Probiert den POST-Abruf über verschiedene ScraperAPI-Modi bis Status 200 erreicht wird."""
-     body_json = json.dumps(SEARCH_PAYLOAD)
+    """Probiert den POST-Abruf über verschiedene ScraperAPI-Modi bis echte Angebote geliefert werden."""
+    body_json = json.dumps(SEARCH_PAYLOAD)
 
     versuche = [
         (
@@ -186,6 +186,15 @@ def sende_post_anfrage():
             }
         ),
         (
+            "ScraperAPI (DE Premium ohne keep_headers)",
+            {
+                "api_key": API_KEY,
+                "url": API_URL,
+                "country_code": "de",
+                "premium": "true"
+            }
+        ),
+        (
             "ScraperAPI (DE Ultra-Premium + keep_headers)",
             {
                 "api_key": API_KEY,
@@ -198,6 +207,8 @@ def sende_post_anfrage():
     ]
 
     letzte_response = None
+    letzter_name = "Keine Methode"
+
     for name, params in versuche:
         print(f"Starte Versuch: {name} ...")
         try:
@@ -209,17 +220,25 @@ def sende_post_anfrage():
                 timeout=90
             )
             letzte_response = resp
-            print(f"-> Status: {resp.status_code} | Länge: {len(resp.text)} Zeichen")
-            if resp.status_code == 200 and len(resp.text) > 300:
+            letzter_name = name
+            print(f"-> Status: {resp.status_code} | Laenge: {len(resp.text)} Zeichen")
+            if resp.status_code == 200 and '"totalPrice"' in resp.text:
                 return resp, name
         except Exception as e:
             print(f"-> Fehler bei {name}: {e}")
 
-    # Letzter Fallback: Direkter Abruf ohne Proxy
     print("Starte Fallback: Direkter POST-Abruf an HolidayCheck-API ...")
-    resp = requests.post(API_URL, headers=HEADERS, data=body_json, timeout=60)
-    print(f"-> Direkt-Status: {resp.status_code} | Länge: {len(resp.text)} Zeichen")
-    return resp, "Direkt-Abruf"
+    try:
+        resp = requests.post(API_URL, headers=HEADERS, data=body_json, timeout=60)
+        print(f"-> Direkt-Status: {resp.status_code} | Laenge: {len(resp.text)} Zeichen")
+        if resp.status_code == 200 and '"totalPrice"' in resp.text:
+            return resp, "Direkt-Abruf"
+        if letzte_response is None:
+            return resp, "Direkt-Abruf"
+    except Exception as e:
+        print(f"-> Fehler beim Direkt-Abruf: {e}")
+
+    return letzte_response, letzter_name
 
 
 def hole_preise():
@@ -235,14 +254,16 @@ def hole_preise():
 
     try:
         response, verwendete_methode = sende_post_anfrage()
+        if response is None:
+            raise RuntimeError("Keine Antwort von ScraperAPI oder HolidayCheck erhalten.")
+
         status = response.status_code
         text_antwort = response.text
 
-        # Komplette Antwort zur Kontrolle im debug-Ordner sichern
         with open("debug/letzte_antwort.txt", "w", encoding="utf-8") as f:
             f.write(
                 f"Methode: {verwendete_methode}\nURL: {API_URL}\n"
-                f"Status: {status}\nLänge: {len(text_antwort)}\n\n{text_antwort}"
+                f"Status: {status}\nLaenge: {len(text_antwort)}\n\n{text_antwort}"
             )
 
         if status == 200:
@@ -255,13 +276,11 @@ def hole_preise():
 
             if angebote_roh:
                 ausgewertet = [berechne_angebots_infos(a) for a in angebote_roh]
-                # Sortieren nach Brutto-Gesamtpreis (aufsteigend)
                 ausgewertet.sort(key=lambda x: x["brutto"])
 
                 top = ausgewertet[0]
                 bester_preis = top["brutto"]
 
-                # Bestes Angebot inklusive Hoteltransfer separat suchen
                 mit_transfer = [
                     a for a in ausgewertet
                     if "inkl" in a["transfer"].lower()
@@ -281,15 +300,14 @@ def hole_preise():
                     f"{top['flughafen']} {top['zeitraum']} | {top['veranstalter']} | "
                     f"{top['transfer']}{transfer_info} | Top-Preise: {alle_brutto}"
                 )
-                print(f"ERFOLG! Günstigster Gesamtpreis: {bester_preis} EUR | {details}")
+                print(f"ERFOLG! Guenstigster Gesamtpreis: {bester_preis} EUR | {details}")
             else:
-                # Fallback per Regex auf totalPrice
                 matches = re.findall(r'"totalPrice"\s*:\s*\{\s*"amount"\s*:\s*([0-9.]+)', text_antwort)
                 preise = sorted(list(set(int(round(float(m))) for m in matches if 1000 <= float(m) <= 6000)))
                 if preise:
                     bester_preis = preise[0]
                     details = f"Gefundene Gesamtpreise (EUR): {preise[:8]}"
-                    print(f"ERFOLG (Regex)! Günstigster Gesamtpreis: {bester_preis} EUR")
+                    print(f"ERFOLG (Regex)! Guenstigster Gesamtpreis: {bester_preis} EUR")
                 else:
                     bester_preis = "Keine Angebote im JSON"
                     details = text_antwort[:180].replace("\n", " ")
@@ -304,7 +322,6 @@ def hole_preise():
         details = str(e)[:180]
         print(f"Fehler beim Abruf: {e}")
 
-    # In preishistorie.csv speichern
     datei_existiert = os.path.exists("preishistorie.csv") and os.path.getsize("preishistorie.csv") > 0
     with open("preishistorie.csv", mode="a", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
