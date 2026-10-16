@@ -1,7 +1,7 @@
 import csv
 import os
+import re
 import requests
-import json
 from datetime import datetime
 
 API_KEY = os.environ.get("SCRAPER_API_KEY")
@@ -11,7 +11,7 @@ def hole_preise():
     zeitstempel = datetime.now().strftime("%Y-%m-%d %H:%M")
     
     if not API_KEY:
-        print("FEHLER: SCRAPER_API_KEY fehlt!")
+        print("FEHLER: SCRAPER_API_KEY fehlt in den GitHub Secrets!")
         return
 
     print("Frage HolidayCheck-API über ScraperAPI ab...")
@@ -28,15 +28,12 @@ def hole_preise():
         print(f"API Antwort-Status: {response.status_code}")
 
         if response.status_code == 200:
-            # Speichert die JSON-Antwort testweise ab, damit wir sie im Log sehen
             text_antwort = response.text
             print(f"Antwort-Länge: {len(text_antwort)} Zeichen")
             
-            import re
-            # Sucht nach allen Beträgen / Preisen im gesamten JSON-Text (z.B. "price": 1249 oder Beträge zwischen 400 und 7000)
+            # Sucht nach allen Beträgen / Preisen im gesamten JSON-Text
             alle_zahlen = re.findall(r'"(?:price|amount|total|totalPrice)"\s*:\s*([0-9.]+)', text_antwort)
             if not alle_zahlen:
-                # Fallback: Suche nach allen Zahlen im JSON, die wie Preise aussehen
                 alle_zahlen = re.findall(r'\b([4-9]\d{2}|[1-9]\d{3})\b', text_antwort)
 
             preise = [int(float(p)) for p in alle_zahlen if 300 < int(float(p)) < 8000]
@@ -47,20 +44,20 @@ def hole_preise():
                 print(f"Erfolg! Günstigster Preis: {bester_preis} EUR")
             else:
                 bester_preis = "Keine Preise erkannt"
-                details = text_antwort[:200] # Zeigt die ersten Zeichen der Antwort
+                details = text_antwort[:200]
                 print("Keine passenden Preise im JSON-Text gefunden.")
         else:
             bester_preis = f"HTTP {response.status_code}"
             details = "-"
             print(f"Fehler: {response.status_code}")
 
-        # CSV lokal schreiben
+        # Schreibt direkt in die echte preishistorie.csv
         eintrag = [zeitstempel, "Dream World Palace", str(bester_preis), details]
         
-        # Schreibt in die lokale CSV (wird als Artefakt gesichert)
-        with open("preishistorie_local.csv", mode="a", newline="", encoding="utf-8") as file:
+        with open("preishistorie.csv", mode="a", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
             writer.writerow(eintrag)
+        print("Erfolgreich in preishistorie.csv geschrieben.")
 
     except Exception as e:
         print(f"Fehler beim Abruf: {e}")
