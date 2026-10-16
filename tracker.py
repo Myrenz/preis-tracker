@@ -34,6 +34,7 @@ def erstelle_payload(hotel_id):
             "package": {
                 "transfer": [],
                 "flight": {
+                    # Hier kannst du beliebig Abflughäfen ergänzen (z.B. ["BRE", "FMO", "HAM", "DTM"])
                     "departureAirports": ["BRE", "FMO"],
                     "directFlight": False,
                     "destinationAirports": []
@@ -138,9 +139,8 @@ def hole_alle_preise():
             bester_preis = "Fehler"
             print(f"-> Ausnahme bei {h_name}: {e}")
 
-        einträge.append([zeitstempel, h-name if 'h-name' in locals() else h_name, str(bester_preis), ""])
+        einträge.append([zeitstempel, h_name, str(bester_preis), ""])
 
-    # CSV schreiben
     with open("preishistorie.csv", mode="a", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         if not datei_existiert:
