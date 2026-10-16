@@ -39,7 +39,7 @@
             const hotelRes = await fetch('hotels.json');
             const hotels = await hotelRes.json();
 
-            const csvRes = await fetch('preishistorie.csv?' + new Date().getTime()); // Cache-Buster
+            const csvRes = await fetch('preishistorie.csv?' + new Date().getTime());
             const csvText = await csvRes.text();
             const rows = csvText.split('\n').slice(1);
 
@@ -53,17 +53,17 @@
                     const hotelName = cols[1].trim();
                     const price = parseFloat(cols[2].trim());
 
+                    // Letzten Preis für die Kacheln speichern
                     latestPrices[hotelName] = { price: isNaN(price) ? cols[2].trim() : price + " €" };
 
+                    // Historie pro Hotel gruppieren
                     if (!historyData[hotelName]) historyData[hotelName] = { times: [], prices: [] };
-                    if (!historyData[hotelName].times.includes(time)) {
-                        historyData[hotelName].times.push(time);
-                        historyData[hotelName].prices.push(isNaN(price) ? null : price);
-                    }
+                    historyData[hotelName].times.push(time);
+                    historyData[hotelName].prices.push(isNaN(price) ? null : price);
                 }
             });
 
-            // Grid mit Hotelkarten und Bildern rendern
+            // Hotel-Kacheln mit Bildern rendern
             const grid = document.getElementById('hotelGrid');
             grid.innerHTML = "";
             hotels.forEach(h => {
@@ -80,7 +80,7 @@
                 grid.appendChild(card);
             });
 
-            // Chart.js Multi-Linien-Diagramm
+            // Chart.js Multi-Linien-Diagramm (getrennt nach Hotels)
             const datasets = [];
             const colors = ['#1a73e8', '#ea4335', '#fbbc05', '#34a853', '#ff6d01', '#46bdc6', '#7b1fa2', '#e91e63'];
             let colorIndex = 0;
@@ -98,6 +98,7 @@
                 colorIndex++;
             }
 
+            // Alle einzigartigen Zeitstempel als X-Achse sammeln und sortieren
             const allTimes = [...new Set(Object.values(historyData).flatMap(d => d.times))].sort();
 
             const ctx = document.getElementById('comparisonChart').getContext('2d');
