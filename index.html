@@ -220,9 +220,9 @@
 
         async function init() {
             try {
-                // Direkter CSV-Export über Google Sheet gid (hotels = erster Reiter, preishistorie = zweiter Reiter)
-                const hotelsUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&sheet=hotels`;
-                const historyUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&sheet=preishistorie`;
+                // Direkter CSV-Export über feste Tabellen-IDs (gid=0 für hotels, gid=1237219952 für preishistorie)
+                const hotelsUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=0`;
+                const historyUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=1237219952`;
 
                 const [hRes, histRes] = await Promise.all([
                     fetch(hotelsUrl),
@@ -230,7 +230,7 @@
                 ]);
 
                 if (!hRes.ok || !histRes.ok) {
-                    throw new Error("Fehler beim Abrufen der Google Sheets. Ist die Tabelle öffentlich?");
+                    throw new Error("Fehler beim Abrufen der Google Sheets.");
                 }
 
                 const hText = await hRes.text();
