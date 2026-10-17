@@ -191,17 +191,7 @@
 
         const FALLBACK_HOTELS = [
             ["5f99a171-6caa-4aff-aa4b-d7dbf273672d", "Dream World Palace", "Side", "Çolaklı", "5", "Modern,Pärchen-Tipp,Aquapark,Top Preis-Leistung", "TRUE", ""],
-            ["3105f0fc-dd6f-4317-b536-933a40650f16", "Dream Fun World", "Side", "Kumköy", "5", "Modern,Pärchen-Tipp,Swim-Up Option,Top Preis-Leistung", "TRUE", ""],
-            ["13bc2f2a-25bf-3318-b55d-e62c7bd1ab8b", "Side Royal Style", "Side", "Evrenseki", "5", "Swim-Up Option,Modern,Pärchen-Tipp,Stylisch", "TRUE", ""],
-            ["0d91a59f-5b3b-3b42-9c25-8306f0f074b4", "The Sense Deluxe", "Side", "Kumköy", "5", "Modern,Pärchen-Tipp,Direkt am Strand,Stylisch", "TRUE", ""],
-            ["8eb9630b-879e-37b7-a291-598c4d8b3545", "Side Star Elegance", "Side", "Side-West", "5", "Swim-Up Option,Direkt am Strand,Pärchen-Tipp,Top Gastronomie", "TRUE", ""],
-            ["6c459876-267d-36f7-856e-a08f03d7b3a1", "TUI BLUE Palm Garden", "Side", "Sorgun", "4.5", "Pärchen-Tipp,Direkt am Strand,Modern,Bungalow-Style", "TRUE", ""],
-            ["33f5eb64-f7da-36d7-ace0-ff41d1bb9337", "Sea Shell Resort & Spa", "Side", "Evrenseki", "5", "Direkt am Strand,Modern", "TRUE", ""],
-            ["859de05c-795d-3c57-8271-ee31eca92fe1", "Aydinbey Kings Palace & Spa", "Side", "Evrenseki", "5", "Direkt am Strand,Top Gastronomie", "TRUE", ""],
-            ["2e44d958-7e5e-4423-92b2-84bb298826b0", "Lago Hotel", "Side", "Sorgun", "5", "Swim-Up Option,Luxus,Direkt am Strand,Stylisch", "FALSE", ""],
-            ["985cf6d5-a336-3c25-b3ed-44c54a262db6", "Hotel Delphin Diva", "Lara", "Antalya-Lara", "5", "Luxus,Direkt am Strand,Top Gastronomie", "FALSE", ""],
-            ["94cad83d-4b34-34b0-a334-cf80482827f3", "Titanic Deluxe Lara", "Lara", "Antalya-Lara", "5", "Luxus,Swim-Up Option,Direkt am Strand", "FALSE", ""],
-            ["7ce75659-2749-3030-bb0b-73785de4852a", "Hotel Delphin Imperial", "Lara", "Antalya-Lara", "5", "Luxus,Swim-Up Option,Direkt am Strand,Top Gastronomie", "FALSE", ""]
+            ["3105f0fc-dd6f-4317-b536-933a40650f16", "Dream Fun World", "Side", "Kumköy", "5", "Modern,Pärchen-Tipp,Swim-Up Option,Top Preis-Leistung", "TRUE", ""]
         ];
 
         let allHotels = [];
@@ -265,9 +255,18 @@
         }
 
         function buildHolidayCheckUrl(hotel) {
-            if (hotel.url && hotel.url.length > 5 && hotel.url !== '""') return hotel.url;
-            const slug = hotel.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-            return `https://www.holidaycheck.de/ho/angebote-${slug}/${hotel.id}/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a`;
+            // Wenn eine echte URL in Spalte H eingetragen ist, nimm diese
+            if (hotel.url && hotel.url.length > 5 && hotel.url.startsWith('http')) return hotel.url;
+            
+            // Bei echten bekannten IDs nutzen wir den direkten Link
+            if (hotel.id && hotel.id.length > 20 && !hotel.id.includes('-') && !hotel.id.startsWith('4545') && !hotel.id.startsWith('1111') && !hotel.id.startsWith('1a1a')) {
+                const slug = hotel.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+                return `https://www.holidaycheck.de/ho/angebote-${slug}/${hotel.id}/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a`;
+            }
+            
+            // Andernfalls leiten wir direkt sauber zur HolidayCheck-Suche für dieses Hotel weiter (kein 404!)
+            const searchQuery = encodeURIComponent(hotel.name + " " + hotel.region);
+            return `https://www.holidaycheck.de/search?q=${searchQuery}`;
         }
 
         function processDataAndRender(hotelRows, historyRows, statusMsg) {
@@ -329,7 +328,7 @@
                     stars,
                     tags,
                     active,
-                    url: buildHolidayCheckUrl({ id, name, url: customUrl }),
+                    url: buildHolidayCheckUrl({ id, name, region, url: customUrl }),
                     currentPrice: current,
                     prevPrice: prev,
                     minPrice: min,
@@ -393,8 +392,8 @@
                     document.getElementById('syncStatus').style.background = "rgba(5, 150, 105, 0.3)";
                 }
             } catch (e) {
-                console.warn("Live-Fetch fehlgeschlagen, nutze Fallback.", e);
-                document.getElementById('syncStatus').textContent = "⚠️ Offline-Modus (Fallback aktiv)";
+                console.warn("Live-Fetch fehlgeschlagen.", e);
+                document.getElementById('syncStatus').textContent = "⚠️ Offline-Modus";
                 document.getElementById('syncStatus').style.background = "rgba(220, 38, 38, 0.3)";
             }
         }
@@ -578,7 +577,7 @@
                                 <div class="price-tag ${h.currentPrice && h.currentPrice <= 2000 ? 'green' : ''}">
                                     ${h.currentPrice !== null ? h.currentPrice + ' €' : 'Wartet auf Bot...'}
                                 </div>
-                                <div class="badges-right">
+                                .badges-right">
                                     ${allTimeBadge}
                                     ${trendHTML}
                                 </div>
