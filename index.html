@@ -190,8 +190,7 @@
         const SPREADSHEET_ID = "1MG0UwMZbmFoSxCdVp8pqspM5wgtgQlJGyoVesRXd5ag";
 
         const FALLBACK_HOTELS = [
-            ["5f99a171-6caa-4aff-aa4b-d7dbf273672d", "Dream World Palace", "Side", "Çolaklı", "5", "Modern,Pärchen-Tipp,Aquapark,Top Preis-Leistung", "TRUE", ""],
-            ["3105f0fc-dd6f-4317-b536-933a40650f16", "Dream Fun World", "Side", "Kumköy", "5", "Modern,Pärchen-Tipp,Swim-Up Option,Top Preis-Leistung", "TRUE", ""]
+            ["5f99a171-6caa-4aff-aa4b-d7dbf273672d", "Dream World Palace", "Side", "Çolaklı", "5", "Modern,Pärchen-Tipp,Aquapark,Top Preis-Leistung", "TRUE", ""]
         ];
 
         let allHotels = [];
@@ -255,18 +254,12 @@
         }
 
         function buildHolidayCheckUrl(hotel) {
-            // Wenn eine echte URL in Spalte H eingetragen ist, nimm diese
+            // 1. Wenn in Spalte H eine echte URL steht, nimm diese
             if (hotel.url && hotel.url.length > 5 && hotel.url.startsWith('http')) return hotel.url;
             
-            // Bei echten bekannten IDs nutzen wir den direkten Link
-            if (hotel.id && hotel.id.length > 20 && !hotel.id.includes('-') && !hotel.id.startsWith('4545') && !hotel.id.startsWith('1111') && !hotel.id.startsWith('1a1a')) {
-                const slug = hotel.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-                return `https://www.holidaycheck.de/ho/angebote-${slug}/${hotel.id}/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a`;
-            }
-            
-            // Andernfalls leiten wir direkt sauber zur HolidayCheck-Suche für dieses Hotel weiter (kein 404!)
-            const searchQuery = encodeURIComponent(hotel.name + " " + hotel.region);
-            return `https://www.holidaycheck.de/search?q=${searchQuery}`;
+            // 2. Ansonsten erzeuge einen sauberen Such-Link auf HolidayCheck für das Hotel (kein 404!)
+            const searchTerm = encodeURIComponent(hotel.name + " " + hotel.region);
+            return `https://www.holidaycheck.de/s/${searchTerm}`;
         }
 
         function processDataAndRender(hotelRows, historyRows, statusMsg) {
@@ -577,7 +570,7 @@
                                 <div class="price-tag ${h.currentPrice && h.currentPrice <= 2000 ? 'green' : ''}">
                                     ${h.currentPrice !== null ? h.currentPrice + ' €' : 'Wartet auf Bot...'}
                                 </div>
-                                .badges-right">
+                                <div class="badges-right">
                                     ${allTimeBadge}
                                     ${trendHTML}
                                 </div>
@@ -602,7 +595,7 @@
                 chartHotels = allHotels.filter(h => chartPinned.includes(h.name));
                 document.getElementById('chartSubtitle').textContent = `Vergleicht deine ${chartHotels.length} manuell mit 📈 ausgewählten Hotels`;
             } else {
-                chartHotels = filteredHotels.filter(h => h.currentPrice !== null).slice(0, 6);
+                chartHotel = filteredHotels.filter(h => h.currentPrice !== null).slice(0, 6);
                 document.getElementById('chartSubtitle').textContent = `Zeigt automatisch die Top ${chartHotels.length} Hotels deiner aktuellen Filterung (Klicke auf 📈 bei einer Karte für eigene Auswahl)`;
             }
 
