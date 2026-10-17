@@ -24,10 +24,11 @@
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 15px; }
         .container { max-width: 1300px; margin: 0 auto; }
         
-        .header { background: linear-gradient(135deg, #1a73e8, #0d47a1); color: white; padding: 20px; border-radius: 16px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(26,115,232,0.2); }
+        .header { background: linear-gradient(135deg, #1a73e8, #0d47a1); color: white; padding: 20px; border-radius: 16px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(26,115,232,0.2); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
         .header h1 { margin: 0 0 6px 0; font-size: 22px; }
         .header p { margin: 0; font-size: 13px; opacity: 0.9; }
-        
+        .sync-status { background: rgba(255,255,255,0.2); color: white; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; }
+
         .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
         .kpi-card { background: var(--card-bg); padding: 14px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
         .kpi-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
@@ -94,3 +95,544 @@
         .chart-title { font-size: 16px; font-weight: 800; margin: 0; }
         .chart-sub { font-size: 12px; color: var(--muted); }
         .chart-box { height: 420px; position: relative; }
+
+        .empty-state { text-align: center; padding: 35px 20px; background: white; border-radius: 14px; color: var(--muted); line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>🌴 Mein Türkei-Reiseportal (Juni 2027)</h1>
+                <p>2 Erwachsene • 7 Tage All Inclusive • Abflug FMO / BRE • Google Sheets Backend (Kostenlos)</p>
+            </div>
+            <div class="sync-status" id="syncStatus">Lade Live-Daten...</div>
+        </div>
+
+        <div class="kpi-row">
+            <div class="kpi-card">
+                <div class="kpi-label">Gefilterte Hotels</div>
+                <div class="kpi-val" id="kpiCount">-</div>
+                <div class="kpi-sub" id="kpiActiveSub">Datenbank aktiv</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Günstigstes Angebot</div>
+                <div class="kpi-val" id="kpiBestPrice">-</div>
+                <div class="kpi-sub" id="kpiBestHotel">-</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Bester Preis-Drop</div>
+                <div class="kpi-val" id="kpiBestDrop">-</div>
+                <div class="kpi-sub" id="kpiDropHotel">im Vgl. zum letzten Check</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Meine Favoriten ❤️</div>
+                <div class="kpi-val" id="kpiFavs">0</div>
+                <div class="kpi-sub">Auf diesem Gerät gespeichert</div>
+            </div>
+        </div>
+
+        <div class="filter-panel">
+            <div class="filter-grid">
+                <div class="filter-group">
+                    <label>🔍 Hotel oder Ort suchen</label>
+                    <input type="text" id="searchInput" placeholder="z.B. Side, Kumköy, Dream...">
+                </div>
+                <div class="filter-group">
+                    <label>📍 Region</label>
+                    <select id="regionSelect">
+                        <option value="ALL">Alle Regionen</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>🔃 Sortieren nach</label>
+                    <select id="sortSelect">
+                        <option value="PRICE_ASC">Preis: Günstigste zuerst</option>
+                        <option value="DROP_DESC">Größte Preissenkung zuerst</option>
+                        <option value="ALLTIME_DIFF">Nähe zum Allzeit-Tief</option>
+                        <option value="NAME_ASC">Name (A - Z)</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>💰 Max. Gesamtpreis: <span id="budgetVal" style="color:var(--primary)">Alle</span></label>
+                    <input type="range" id="budgetSlider" min="1200" max="3600" step="50" value="3600">
+                </div>
+            </div>
+
+            <div class="chips-row" id="chipsContainer">
+                <div class="chip fav-chip" id="favFilterBtn">❤️ Nur Favoriten</div>
+                <div class="chip" id="under2kBtn">🎯 Strikt unter 2.000 €</div>
+                <button class="reset-btn" id="resetFiltersBtn">Filter zurücksetzen</button>
+            </div>
+        </div>
+
+        <div class="results-info">
+            <span id="resultsText">Lade Hotels...</span>
+            <span style="font-size: 12px;">Tipp: ❤️ merkt Hotels vor, 📈 wählt sie für den Graphen unten aus</span>
+        </div>
+
+        <div class="grid" id="hotelGrid"></div>
+
+        <div class="chart-section">
+            <div class="chart-header">
+                <div>
+                    <h2 class="chart-title">📈 Preisentwicklung im direkten Vergleich</h2>
+                    <div class="chart-sub" id="chartSubtitle">Zeigt deine 📈 ausgewählten Hotels (oder die Top-Ergebnisse deiner aktuellen Filterung)</div>
+                </div>
+            </div>
+            <div class="chart-box">
+                <canvas id="comparisonChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SPREADSHEET_ID = "1MG0UwMZbmFoSxCdVp8pqspM5wgtgQlJGyoVesRXd5ag";
+
+        const FALLBACK_HOTELS = [
+            ["5f99a171-6caa-4aff-aa4b-d7dbf273672d", "Dream World Palace", "Side", "Çolaklı", "5", "Modern,Pärchen-Tipp,Aquapark,Top Preis-Leistung", "TRUE", ""],
+            ["3105f0fc-dd6f-4317-b536-933a40650f16", "Dream Fun World", "Side", "Kumköy", "5", "Modern,Pärchen-Tipp,Swim-Up Option,Top Preis-Leistung", "TRUE", ""],
+            ["13bc2f2a-25bf-3318-b55d-e62c7bd1ab8b", "Side Royal Style", "Side", "Evrenseki", "5", "Swim-Up Option,Modern,Pärchen-Tipp,Stylisch", "TRUE", ""],
+            ["0d91a59f-5b3b-3b42-9c25-8306f0f074b4", "The Sense Deluxe", "Side", "Kumköy", "5", "Modern,Pärchen-Tipp,Direkt am Strand,Stylisch", "TRUE", ""],
+            ["8eb9630b-879e-37b7-a291-598c4d8b3545", "Side Star Elegance", "Side", "Side-West", "5", "Swim-Up Option,Direkt am Strand,Pärchen-Tipp,Top Gastronomie", "TRUE", ""],
+            ["6c459876-267d-36f7-856e-a08f03d7b3a1", "TUI BLUE Palm Garden", "Side", "Sorgun", "4.5", "Pärchen-Tipp,Direkt am Strand,Modern,Bungalow-Style", "TRUE", ""],
+            ["33f5eb64-f7da-36d7-ace0-ff41d1bb9337", "Sea Shell Resort & Spa", "Side", "Evrenseki", "5", "Direkt am Strand,Modern", "TRUE", ""],
+            ["859de05c-795d-3c57-8271-ee31eca92fe1", "Aydinbey Kings Palace & Spa", "Side", "Evrenseki", "5", "Direkt am Strand,Top Gastronomie", "TRUE", ""],
+            ["2e44d958-7e5e-4423-92b2-84bb298826b0", "Lago Hotel", "Side", "Sorgun", "5", "Swim-Up Option,Luxus,Direkt am Strand,Stylisch", "FALSE", ""],
+            ["985cf6d5-a336-3c25-b3ed-44c54a262db6", "Hotel Delphin Diva", "Lara", "Antalya-Lara", "5", "Luxus,Direkt am Strand,Top Gastronomie", "FALSE", ""],
+            ["94cad83d-4b34-34b0-a334-cf80482827f3", "Titanic Deluxe Lara", "Lara", "Antalya-Lara", "5", "Luxus,Swim-Up Option,Direkt am Strand", "FALSE", ""],
+            ["7ce75659-2749-3030-bb0b-73785de4852a", "Hotel Delphin Imperial", "Lara", "Antalya-Lara", "5", "Luxus,Swim-Up Option,Direkt am Strand,Top Gastronomie", "FALSE", ""]
+        ];
+
+        let allHotels = [];
+        let favorites = JSON.parse(localStorage.getItem('favHotels_2027') || '[]');
+        let chartPinned = JSON.parse(localStorage.getItem('chartPinned_2027') || '[]');
+        let activeTag = null;
+        let onlyFavs = false;
+        let onlyUnder2k = false;
+        let chartInstance = null;
+        let globalAllTimes = [];
+        let listenersInitialized = false;
+
+        function fetchSheetViaJSONP(sheetId, sheetName) {
+            return new Promise((resolve, reject) => {
+                const cbName = 'gvizCb_' + Math.floor(Math.random() * 1e9);
+                const script = document.createElement('script');
+                const timer = setTimeout(() => {
+                    cleanup();
+                    reject(new Error('Timeout'));
+                }, 6000);
+
+                function cleanup() {
+                    clearTimeout(timer);
+                    delete window[cbName];
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                }
+
+                window[cbName] = function(res) {
+                    cleanup();
+                    if (!res || res.status === 'error' || !res.table) {
+                        reject(new Error('Sheet Error'));
+                        return;
+                    }
+                    const rows = [];
+                    (res.table.rows || []).forEach(r => {
+                        const cells = (r && r.c) ? r.c : [];
+                        const rowVals = [];
+                        for (let i = 0; i < 8; i++) {
+                            const c = cells[i];
+                            if (!c || (c.v === null && c.f === undefined)) {
+                                rowVals.push('');
+                            } else if (c.f !== undefined && c.f !== null) {
+                                rowVals.push(String(c.f).trim());
+                            } else {
+                                rowVals.push(String(c.v).trim());
+                            }
+                        }
+                        if (rowVals.some(x => x !== '')) rows.push(rowVals);
+                    });
+                    resolve(rows);
+                };
+
+                script.onerror = function() {
+                    cleanup();
+                    reject(new Error('Network Error'));
+                };
+
+                script.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=responseHandler:${cbName}&headers=0&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
+                document.body.appendChild(script);
+            });
+        }
+
+        function buildHolidayCheckUrl(hotel) {
+            if (hotel.url && hotel.url.length > 5 && hotel.url !== '""') return hotel.url;
+            const slug = hotel.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+            return `https://www.holidaycheck.de/ho/angebote-${slug}/${hotel.id}/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a`;
+        }
+
+        function processDataAndRender(hotelRows, historyRows, statusMsg) {
+            const historyByHotel = {};
+            const allTimestampsSet = new Set();
+
+            historyRows.forEach(row => {
+                const time = (row[0] || '').trim();
+                const hName = (row[1] || '').trim();
+                const rawPrice = (row[2] || '').replace(',', '.').trim();
+                if (!time || !hName || time.toLowerCase().includes('zeitstempel')) return;
+
+                const pVal = parseFloat(rawPrice);
+                allTimestampsSet.add(time);
+                if (!historyByHotel[hName]) {
+                    historyByHotel[hName] = { timeMap: {}, validPrices: [] };
+                }
+                historyByHotel[hName].timeMap[time] = isNaN(pVal) ? null : pVal;
+                if (!isNaN(pVal)) {
+                    historyByHotel[hName].validPrices.push(pVal);
+                }
+            });
+
+            globalAllTimes = Array.from(allTimestampsSet).sort();
+
+            const regionsSet = new Set();
+            const tagsSet = new Set();
+
+            allHotels = [];
+            hotelRows.forEach(row => {
+                const id = (row[0] || '').trim();
+                const name = (row[1] || '').trim();
+                if (!id || !name || id.toLowerCase() === 'id') return;
+
+                const region = (row[2] || '').trim() || 'Sonstige';
+                const ort = (row[3] || '').trim();
+                const stars = parseFloat(String(row[4] || '5').replace(',', '.')) || 5;
+                const rawTags = (row[5] || '').trim();
+                const tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [];
+                const active = String(row[6] || 'TRUE').toUpperCase() !== 'FALSE';
+                const customUrl = (row[7] || '').trim();
+
+                const stats = historyByHotel[name] || { timeMap: {}, validPrices: [] };
+                const valid = stats.validPrices;
+                const current = valid.length > 0 ? valid[valid.length - 1] : null;
+                const prev = valid.length > 1 ? valid[valid.length - 2] : null;
+                const min = valid.length > 0 ? Math.min(...valid) : null;
+                const max = valid.length > 0 ? Math.max(...valid) : null;
+                const diffPrev = (current !== null && prev !== null) ? (current - prev) : 0;
+
+                if (region) regionsSet.add(region);
+                tags.forEach(t => tagsSet.add(t));
+
+                allHotels.push({
+                    id,
+                    name,
+                    region,
+                    ort,
+                    stars,
+                    tags,
+                    active,
+                    url: buildHolidayCheckUrl({ id, name, url: customUrl }),
+                    currentPrice: current,
+                    prevPrice: prev,
+                    minPrice: min,
+                    maxPrice: max,
+                    diffPrev: diffPrev,
+                    timeMap: stats.timeMap
+                });
+            });
+
+            const regionSelect = document.getElementById('regionSelect');
+            const currentRegion = regionSelect.value || 'ALL';
+            regionSelect.innerHTML = '<option value="ALL">Alle Regionen</option>';
+            Array.from(regionsSet).sort().forEach(reg => {
+                const opt = document.createElement('option');
+                opt.value = reg;
+                opt.textContent = `📍 ${reg}`;
+                regionSelect.appendChild(opt);
+            });
+            regionSelect.value = currentRegion;
+
+            const chipsContainer = document.getElementById('chipsContainer');
+            const resetBtn = document.getElementById('resetFiltersBtn');
+            document.querySelectorAll('.tag-chip').forEach(c => c.remove());
+            Array.from(tagsSet).forEach(tag => {
+                const chip = document.createElement('div');
+                chip.className = 'chip tag-chip' + (activeTag === tag ? ' active' : '');
+                chip.textContent = tag.toLowerCase().includes('swim') ? '🏊 ' + tag : '🏷️ ' + tag;
+                chip.dataset.tag = tag;
+                chip.addEventListener('click', () => {
+                    if (activeTag === tag) {
+                        activeTag = null;
+                        chip.classList.remove('active');
+                    } else {
+                        activeTag = tag;
+                        document.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('active'));
+                        chip.classList.add('active');
+                    }
+                    render();
+                });
+                chipsContainer.insertBefore(chip, resetBtn);
+            });
+
+            if (!listenersInitialized) {
+                setupEventListeners();
+                listenersInitialized = true;
+            }
+            render(statusMsg);
+        }
+
+        async function init() {
+            processDataAndRender(FALLBACK_HOTELS, [], "Verbinde mit Google Sheet...");
+
+            try {
+                const [liveHotels, liveHistory] = await Promise.all([
+                    fetchSheetViaJSONP(SPREADSHEET_ID, 'hotels'),
+                    fetchSheetViaJSONP(SPREADSHEET_ID, 'preishistorie').catch(() => [])
+                ]);
+
+                if (liveHotels && liveHotels.length > 0) {
+                    processDataAndRender(liveHotels, liveHistory, "🟢 Live verbunden mit Google Sheets");
+                    document.getElementById('syncStatus').style.background = "rgba(5, 150, 105, 0.3)";
+                }
+            } catch (e) {
+                console.warn("Live-Fetch fehlgeschlagen, nutze Fallback.", e);
+                document.getElementById('syncStatus').textContent = "⚠️ Offline-Modus (Fallback aktiv)";
+                document.getElementById('syncStatus').style.background = "rgba(220, 38, 38, 0.3)";
+            }
+        }
+
+        function setupEventListeners() {
+            document.getElementById('searchInput').addEventListener('input', () => render());
+            document.getElementById('regionSelect').addEventListener('change', () => render());
+            document.getElementById('sortSelect').addEventListener('change', () => render());
+            
+            const slider = document.getElementById('budgetSlider');
+            slider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                document.getElementById('budgetVal').textContent = val >= 3600 ? 'Alle' : `bis ${val} €`;
+                render();
+            });
+
+            document.getElementById('favFilterBtn').addEventListener('click', (e) => {
+                onlyFavs = !onlyFavs;
+                e.currentTarget.classList.toggle('active', onlyFavs);
+                render();
+            });
+
+            document.getElementById('under2kBtn').addEventListener('click', (e) => {
+                onlyUnder2k = !onlyUnder2k;
+                e.currentTarget.classList.toggle('active', onlyUnder2k);
+                if (onlyUnder2k) {
+                    document.getElementById('budgetSlider').value = 2000;
+                    document.getElementById('budgetVal').textContent = 'bis 2000 €';
+                } else {
+                    document.getElementById('budgetSlider').value = 3600;
+                    document.getElementById('budgetVal').textContent = 'Alle';
+                }
+                render();
+            });
+
+            document.getElementById('resetFiltersBtn').addEventListener('click', () => {
+                document.getElementById('searchInput').value = '';
+                document.getElementById('regionSelect').value = 'ALL';
+                document.getElementById('sortSelect').value = 'PRICE_ASC';
+                document.getElementById('budgetSlider').value = 3600;
+                document.getElementById('budgetVal').textContent = 'Alle';
+                activeTag = null;
+                onlyFavs = false;
+                onlyUnder2k = false;
+                document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+                render();
+            });
+        }
+
+        window.toggleFav = function(hotelName) {
+            if (favorites.includes(hotelName)) {
+                favorites = favorites.filter(n => n !== hotelName);
+            } else {
+                favorites.push(hotelName);
+            }
+            localStorage.setItem('favHotels_2027', JSON.stringify(favorites));
+            render();
+        };
+
+        window.toggleChartPin = function(hotelName) {
+            if (chartPinned.includes(hotelName)) {
+                chartPinned = chartPinned.filter(n => n !== hotelName);
+            } else {
+                chartPinned.push(hotelName);
+            }
+            localStorage.setItem('chartPinned_2027', JSON.stringify(chartPinned));
+            render();
+        };
+
+        function render(statusOverride) {
+            const search = document.getElementById('searchInput').value.toLowerCase().trim();
+            const region = document.getElementById('regionSelect').value;
+            const sortMode = document.getElementById('sortSelect').value;
+            const maxBudget = parseInt(document.getElementById('budgetSlider').value);
+
+            let filtered = allHotels.filter(h => {
+                if (search && !h.name.toLowerCase().includes(search) && !h.ort.toLowerCase().includes(search) && !h.region.toLowerCase().includes(search)) return false;
+                if (region !== 'ALL' && h.region !== region) return false;
+                if (activeTag && !h.tags.includes(activeTag)) return false;
+                if (onlyFavs && !favorites.includes(h.name)) return false;
+                if (maxBudget < 3600 && h.currentPrice !== null && h.currentPrice > maxBudget) return false;
+                return true;
+            });
+
+            filtered.sort((a, b) => {
+                if (sortMode === 'NAME_ASC') return a.name.localeCompare(b.name);
+                if (a.currentPrice === null) return 1;
+                if (b.currentPrice === null) return -1;
+
+                if (sortMode === 'PRICE_ASC') return a.currentPrice - b.currentPrice;
+                if (sortMode === 'DROP_DESC') return a.diffPrev - b.diffPrev;
+                if (sortMode === 'ALLTIME_DIFF') {
+                    return (a.currentPrice - a.minPrice) - (b.currentPrice - b.minPrice);
+                }
+                return 0;
+            });
+
+            document.getElementById('kpiCount').textContent = `${filtered.length} / ${allHotels.length}`;
+            if (statusOverride) {
+                document.getElementById('syncStatus').textContent = statusOverride;
+            }
+            document.getElementById('kpiFavs').textContent = favorites.length;
+
+            const withPrice = filtered.filter(h => h.currentPrice !== null);
+            if (withPrice.length > 0) {
+                const cheapest = [...withPrice].sort((a, b) => a.currentPrice - b.currentPrice)[0];
+                document.getElementById('kpiBestPrice').textContent = `${cheapest.currentPrice} €`;
+                document.getElementById('kpiBestHotel').textContent = cheapest.name;
+
+                const bestDrop = [...withPrice].sort((a, b) => a.diffPrev - b.diffPrev)[0];
+                if (bestDrop.diffPrev < 0) {
+                    document.getElementById('kpiBestDrop').textContent = `${bestDrop.diffPrev} €`;
+                    document.getElementById('kpiDropHotel').textContent = bestDrop.name;
+                } else {
+                    document.getElementById('kpiBestDrop').textContent = `Stabil`;
+                    document.getElementById('kpiDropHotel').textContent = `Keine Senkung beim letzten Lauf`;
+                }
+            } else {
+                document.getElementById('kpiBestPrice').textContent = '-';
+                document.getElementById('kpiBestHotel').textContent = 'Wartet auf ersten Preis-Lauf';
+            }
+
+            document.getElementById('resultsText').textContent = `${filtered.length} Hotel(s) gefunden`;
+
+            const grid = document.getElementById('hotelGrid');
+            grid.innerHTML = '';
+
+            if (filtered.length === 0) {
+                grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;">Keine Hotels für diese Filter gefunden. Setze die Filter oben zurück!</div>`;
+            }
+
+            filtered.forEach(h => {
+                const isFav = favorites.includes(h.name);
+                const isPinned = chartPinned.includes(h.name);
+
+                let budgetClass = '';
+                if (h.currentPrice !== null) {
+                    if (h.currentPrice <= 1850) budgetClass = 'in-budget';
+                    else if (h.currentPrice <= 2050) budgetClass = 'near-budget';
+                    else budgetClass = 'over-budget';
+                }
+
+                let trendHTML = '';
+                if (h.currentPrice !== null && h.prevPrice !== null) {
+                    if (h.diffPrev < 0) trendHTML = `<span class="trend down">↘ ${h.diffPrev} €</span>`;
+                    else if (h.diffPrev > 0) trendHTML = `<span class="trend up">↗ +${h.diffPrev} €</span>`;
+                    else trendHTML = `<span class="trend same">→ ±0 €</span>`;
+                }
+
+                let allTimeBadge = '';
+                if (h.currentPrice !== null && h.minPrice !== null && h.currentPrice <= h.minPrice) {
+                    allTimeBadge = `<span class="alltime-badge">🔥 Bestpreis!</span>`;
+                }
+
+                const tagsHTML = h.tags.map(t => {
+                    const extraClass = t.toLowerCase().includes('swim') ? 'swimup' : '';
+                    return `<span class="tag-badge ${extraClass}">${t}</span>`;
+                }).join('');
+
+                const card = document.createElement('div');
+                card.className = `card ${budgetClass}`;
+                card.innerHTML = `
+                    <div>
+                        <div class="card-header">
+                            <div class="card-title">
+                                ${h.name}
+                                <span class="stars">${'★'.repeat(Math.floor(h.stars))}</span>
+                            </div>
+                            <div class="action-icons">
+                                <button class="icon-btn ${isPinned ? 'chart-active' : ''}" onclick="toggleChartPin('${h.name.replace(/'/g, "\\'")}')" title="Im Diagramm vergleichen">📈</button>
+                                <button class="icon-btn ${isFav ? 'fav-active' : ''}" onclick="toggleFav('${h.name.replace(/'/g, "\\'")}')" title="Als Favorit merken">${isFav ? '❤️' : '🤍'}</button>
+                            </div>
+                        </div>
+                        <div class="location-badge">📍 ${h.region}${h.ort ? ' • ' + h.ort : ''}</div>
+                        <div class="tags-wrap">${tagsHTML}</div>
+                    </div>
+
+                    <div>
+                        <div class="price-section">
+                            <div class="price-row">
+                                <div class="price-tag ${h.currentPrice && h.currentPrice <= 2000 ? 'green' : ''}">
+                                    ${h.currentPrice !== null ? h.currentPrice + ' €' : 'Wartet auf Bot...'}
+                                </div>
+                                <div class="badges-right">
+                                    ${allTimeBadge}
+                                    ${trendHTML}
+                                </div>
+                            </div>
+                            <div class="meta-stats">
+                                <span>Tiefstpreis: <b>${h.minPrice ? h.minPrice + ' €' : '-'}</b></span>
+                                <span>Höchstpreis: <b>${h.maxPrice ? h.maxPrice + ' €' : '-'}</b></span>
+                            </div>
+                        </div>
+                        <a href="${h.url}" target="_blank" class="offer-btn">Zum HolidayCheck-Angebot ↗</a>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+
+            updateChart(filtered);
+        }
+
+        function updateChart(filteredHotels) {
+            let chartHotels = [];
+            if (chartPinned.length > 0) {
+                chartHotels = allHotels.filter(h => chartPinned.includes(h.name));
+                document.getElementById('chartSubtitle').textContent = `Vergleicht deine ${chartHotels.length} manuell mit 📈 ausgewählten Hotels`;
+            } else {
+                chartHotels = filteredHotels.filter(h => h.currentPrice !== null).slice(0, 6);
+                document.getElementById('chartSubtitle').textContent = `Zeigt automatisch die Top ${chartHotels.length} Hotels deiner aktuellen Filterung (Klicke auf 📈 bei einer Karte für eigene Auswahl)`;
+            }
+
+            const colors = ['#1a73e8', '#059669', '#d97706', '#e11d48', '#7c3aed', '#0891b2', '#ea580c', '#4f46e5'];
+            const datasets = chartHotels.map((h, i) => ({
+                label: h.name,
+                data: globalAllTimes.map(t => h.timeMap[t] !== undefined ? h.timeMap[t] : null),
+                borderColor: colors[i % colors.length],
+                backgroundColor: 'transparent',
+                borderWidth: 2.5,
+                tension: 0.2,
+                spanGaps: true
+            }));
+
+            const ctx = document.getElementById('comparisonChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: { labels: globalAllTimes, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { ticks: { callback: v => v + ' €' } } }
+                }
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>
