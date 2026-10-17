@@ -95,7 +95,7 @@
         .chart-sub { font-size: 12px; color: var(--muted); }
         .chart-box { height: 420px; position: relative; }
 
-        .empty-state { text-align: center; padding: 40px 20px; background: white; border-radius: 14px; color: var(--muted); }
+        .empty-state { text-align: center; padding: 40px 20px; background: white; border-radius: 14px; color: var(--muted); line-height: 1.6; }
     </style>
 </head>
 <body>
@@ -185,30 +185,6 @@
     <script>
         const SPREADSHEET_ID = "1MG0UwMzbmFoSxCdVp8pqspM5wgtgQIGyoVesRXd5ag";
 
-        function parseCSV(text) {
-            let lines = text.split("\n");
-            let result = [];
-            if (lines.length === 0) return result;
-            let headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ''));
-            for (let i = 1; i < lines.length; i++) {
-                if (!lines[i].trim()) continue;
-                let currentline = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-                let obj = {};
-                for (let j = 0; j < headers.length; j++) {
-                    let val = currentline[j] !== undefined ? currentline[j].trim().replace(/^"|"$/g, '') : "";
-                    obj[headers[j]] = val;
-                }
-                result.push(obj);
-            }
-            return result;
-        }
-
-        function buildHolidayCheckUrl(hotel) {
-            if (hotel.url && hotel.url.length > 5) return hotel.url;
-            const slug = hotel.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-            return `https://www.holidaycheck.de/ho/angebote-${slug}/${hotel.id}/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a`;
-        }
-
         let allHotels = [];
         let favorites = JSON.parse(localStorage.getItem('favHotels_2027') || '[]');
         let chartPinned = JSON.parse(localStorage.getItem('chartPinned_2027') || '[]');
@@ -218,44 +194,147 @@
         let chartInstance = null;
         let globalAllTimes = [];
 
-        async function init() {
+        // Robuster CSV-Parser (behandelt Anführungszeichen und Kommas wie "4,5" korrekt)
+        function parseCSVToRows(text) {
+            const rows = [];
+            let row = [];
+            let cur = '';
+            let inQuotes = false;
+            for (let i = 0; i < text.length; i++) {
+                const ch = text[i];
+                const next = text[i + 1];
+                if (inQuotes) {
+                    if (ch === '"' && next === '"') {
+                        cur += '"';
+                        i++;
+                    } else if (ch === '"') {
+                        inQuotes = false;
+                    } else {
+                        cur += ch;
+                    }
+                } else {
+                    if (ch === '"') {
+                        inQuotes = true;
+                    } else if (ch === ',') {
+                        row.push(cur.trim());
+                        cur = '';
+                    } else if (ch === '\n' || (ch === '\r' && next === '\n')) {
+                        if (ch === '\r') i++;
+                        row.push(cur.trim());
+                        if (row.some(cell => cell !== '')) rows.push(row);
+                        row = [];
+                        cur = '';
+                    } else if (ch !== '\r') {
+                        cur += ch;
+                    }
+                }
+            }
+            if (cur !== '' || row.length > 0) {
+                row.push(cur.trim());
+                if (row.some(cell => cell !== '')) rows.push(row);
+            }
+            return rows;
+        }
+
+        // Methode 1: Direkter CSV-Abruf über gviz
+        // Methode 2 (Automatischer Fallback): JSONP Script-Abruf (umgeht jede Browser-/Adblock-CORS-Sperre)
+        async function loadSheetRows(sheetName) {
+            const csvUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&headers=0&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
             try {
-                // Direkter CSV-Export über feste Tabellen-IDs (gid=0 für hotels, gid=1237219952 für preishistorie)
-                const hotelsUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=0`;
-                const historyUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=1237219952`;
+                const res = await fetch(csvUrl);
+                if (res.ok) {
+                    const text = await res.text();
+                    if (!text.trim().startsWith('<!DOCTYPE') && !text.trim().startsWith('<html')) {
+                        return parseCSVToRows(text);
+                    }
+                }
+            } catch (e) {
+                console.warn(`CSV-Fetch für ${sheetName} blockiert, nutze JSONP-Fallback...`);
+            }
 
-                const [hRes, histRes] = await Promise.all([
-                    fetch(hotelsUrl),
-                    fetch(historyUrl)
-                ]);
+            return new Promise((resolve, reject) => {
+                const callbackName = 'gvizCb_' + sheetName.replace(/[^a-zA-Z0-9]/g, '') + '_' + Math.floor(Math.random() * 1000000);
+                const script = document.createElement('script');
+                const timer = setTimeout(() => {
+                    cleanup();
+                    reject(new Error('Zeitüberschreitung beim Laden von ' + sheetName));
+                }, 10000);
 
-                if (!hRes.ok || !histRes.ok) {
-                    throw new Error("Fehler beim Abrufen der Google Sheets.");
+                function cleanup() {
+                    clearTimeout(timer);
+                    delete window[callbackName];
+                    if (script.parentNode) script.parentNode.removeChild(script);
                 }
 
-                const hText = await hRes.text();
-                const histText = await histRes.text();
+                window[callbackName] = function(response) {
+                    cleanup();
+                    if (!response || response.status === 'error' || !response.table) {
+                        reject(new Error('Ungültige Antwort von Google Sheets für ' + sheetName));
+                        return;
+                    }
+                    const rows = [];
+                    const cols = response.table.cols || [];
+                    if (cols.some(c => c && c.label && c.label.trim() !== '')) {
+                        rows.push(cols.map(c => (c && c.label) ? String(c.label).trim() : ''));
+                    }
+                    (response.table.rows || []).forEach(r => {
+                        const cells = (r && r.c) ? r.c : [];
+                        const rowVals = [];
+                        for (let i = 0; i < Math.max(cols.length, cells.length, 8); i++) {
+                            const cell = cells[i];
+                            if (!cell || (cell.v === null && cell.f === undefined)) {
+                                rowVals.push('');
+                            } else if (cell.f !== undefined && cell.f !== null) {
+                                rowVals.push(String(cell.f).trim());
+                            } else {
+                                rowVals.push(String(cell.v).trim());
+                            }
+                        }
+                        rows.push(rowVals);
+                    });
+                    resolve(rows);
+                };
 
-                const hotelsJson = parseCSV(hText);
-                const rows = parseCSV(histText);
+                script.onerror = function() {
+                    cleanup();
+                    reject(new Error('Zugriff verweigert für ' + sheetName));
+                };
+
+                script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:${callbackName}&headers=0&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
+                document.body.appendChild(script);
+            });
+        }
+
+        function buildHolidayCheckUrl(hotel) {
+            if (hotel.url && hotel.url.length > 5 && hotel.url !== '""') return hotel.url;
+            const slug = hotel.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+            return `https://www.holidaycheck.de/ho/angebote-${slug}/${hotel.id}/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a`;
+        }
+
+        async function init() {
+            try {
+                const [hotelRows, historyRows] = await Promise.all([
+                    loadSheetRows('hotels'),
+                    loadSheetRows('preishistorie')
+                ]);
 
                 const historyByHotel = {};
                 const allTimestampsSet = new Set();
 
-                rows.forEach(row => {
-                    const time = row["Zeitstempel"];
-                    const hName = row["Hotel"];
-                    const pVal = parseFloat(row["Günstigster_Preis_EUR"]);
+                historyRows.forEach(row => {
+                    const time = (row[0] || '').trim();
+                    const hName = (row[1] || '').trim();
+                    const rawPrice = (row[2] || '').replace(',', '.').trim();
+                    if (!time || !hName || time.toLowerCase() === 'zeitstempel') return;
 
-                    if (time && hName) {
-                        allTimestampsSet.add(time);
-                        if (!historyByHotel[hName]) {
-                            historyByHotel[hName] = { timeMap: {}, validPrices: [] };
-                        }
-                        historyByHotel[hName].timeMap[time] = isNaN(pVal) ? null : pVal;
-                        if (!isNaN(pVal)) {
-                            historyByHotel[hName].validPrices.push(pVal);
-                        }
+                    const pVal = parseFloat(rawPrice);
+                    allTimestampsSet.add(time);
+                    if (!historyByHotel[hName]) {
+                        historyByHotel[hName] = { timeMap: {}, validPrices: [] };
+                    }
+                    historyByHotel[hName].timeMap[time] = isNaN(pVal) ? null : pVal;
+                    if (!isNaN(pVal)) {
+                        historyByHotel[hName].validPrices.push(pVal);
                     }
                 });
 
@@ -264,8 +343,21 @@
                 const regionsSet = new Set();
                 const tagsSet = new Set();
 
-                allHotels = hotelsJson.map(h => {
-                    const stats = historyByHotel[h.name] || { timeMap: {}, validPrices: [] };
+                allHotels = [];
+                hotelRows.forEach(row => {
+                    const id = (row[0] || '').trim();
+                    const name = (row[1] || '').trim();
+                    if (!id || !name || id.toLowerCase() === 'id') return;
+
+                    const region = (row[2] || '').trim() || 'Sonstige';
+                    const ort = (row[3] || '').trim();
+                    const stars = parseFloat(String(row[4] || '5').replace(',', '.')) || 5;
+                    const rawTags = (row[5] || '').trim();
+                    const tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [];
+                    const active = String(row[6] || 'TRUE').toUpperCase() !== 'FALSE';
+                    const customUrl = (row[7] || '').trim();
+
+                    const stats = historyByHotel[name] || { timeMap: {}, validPrices: [] };
                     const valid = stats.validPrices;
                     const current = valid.length > 0 ? valid[valid.length - 1] : null;
                     const prev = valid.length > 1 ? valid[valid.length - 2] : null;
@@ -273,25 +365,25 @@
                     const max = valid.length > 0 ? Math.max(...valid) : null;
                     const diffPrev = (current !== null && prev !== null) ? (current - prev) : 0;
 
-                    if (h.region) regionsSet.add(h.region);
-                    if (h.tags) {
-                        h.tags.split(',').map(t => t.trim()).forEach(t => { if(t) tagsSet.add(t); });
-                    }
+                    if (region) regionsSet.add(region);
+                    tags.forEach(t => tagsSet.add(t));
 
-                    return {
-                        ...h,
-                        region: h.region || "Sonstige",
-                        ort: h.ort || "",
-                        tags: h.tags ? h.tags.split(',').map(t => t.trim()) : [],
-                        stars: parseFloat(h.stars) || 5,
-                        url: buildHolidayCheckUrl(h),
+                    allHotels.push({
+                        id,
+                        name,
+                        region,
+                        ort,
+                        stars,
+                        tags,
+                        active,
+                        url: buildHolidayCheckUrl({ id, name, url: customUrl }),
                         currentPrice: current,
                         prevPrice: prev,
                         minPrice: min,
                         maxPrice: max,
                         diffPrev: diffPrev,
                         timeMap: stats.timeMap
-                    };
+                    });
                 });
 
                 const regionSelect = document.getElementById('regionSelect');
@@ -327,7 +419,13 @@
                 render();
             } catch (err) {
                 console.error("Fehler beim Laden:", err);
-                document.getElementById('hotelGrid').innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;"><b>Fehler beim Laden der Google Sheet Daten.</b><br>Stelle sicher, dass die Google-Tabelle über "Freigeben" auf <i>"Jeder, der den Link hat" (Betrachter)</i> gestellt ist!</div>`;
+                document.getElementById('hotelGrid').innerHTML = `
+                    <div class="empty-state" style="grid-column: 1 / -1;">
+                        <b>Zugriff auf die Google-Tabelle noch blockiert (${err.message}).</b><br><br>
+                        Bitte prüfe in deiner Google-Tabelle einen dieser beiden Punkte:<br>
+                        1. Oben rechts auf <b>Teilen</b> klicken &rarr; Unter „Allgemeiner Zugriff“ von „Eingeschränkt“ auf <b>„Jeder, der den Link hat“</b> umstellen.<br>
+                        2. Alternativ oben links auf <b>Datei &rarr; Freigeben &rarr; Im Web veröffentlichen &rarr; Veröffentlichen</b> klicken.
+                    </div>`;
             }
         }
 
