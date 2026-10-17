@@ -2,57 +2,35 @@ name: Preis-Tracker
 
 on:
   schedule:
-    - cron: "17 5 * * *"    # täglich ca. 07:17 Uhr deutscher Sommerzeit
-  workflow_dispatch:
-
-concurrency:
-  group: preis-tracker
-  cancel-in-progress: false
-
-permissions:
-  contents: write            # Erlaubt das direkte Aktualisieren der preishistorie.csv im Repo
+    # Läuft ab sofort alle 8 Stunden (um 0:00, 8:00 und 16:00 Uhr UTC)
+    - cron: '0 */8 * * *'
+  workflow_dispatch: # Ermöglicht auch weiterhin den manuellen "Run workflow"-Knopf
 
 jobs:
-  track:
+  run-tracker:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
-      - name: Repository auschecken
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Python einrichten
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: pip
+          python-version: '3.10'
 
-      - name: Abhängigkeiten installieren
-        run: pip install -r requirements.txt
+      - name: Install Dependencies
+        run: |
+          pip install requests
 
-      - name: Tracker ausführen
-        run: python tracker.py
+      - name: Run Tracker Script
         env:
           SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
-          SHEET_WEBHOOK_URL: ${{ secrets.SHEET_WEBHOOK_URL }}
-          SHEET_TOKEN: ${{ secrets.SHEET_TOKEN }}
-
-      - name: Ergebnisse und Debug-Daten als Artifact sichern
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: preishistorie-artifact
-          path: |
-            debug/
-            preishistorie.csv
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: CSV im Repository aktualisieren (konfliktfrei)
-        if: always()
         run: |
-          git config user.name "PriceBot"
-          git config user.email "bot@noreply.github.com"
-          git add preishistorie.csv || true
-          git diff --staged --quiet || git commit -m "Preis-Update $(date -u +'%Y-%m-%d %H:%M')"
-          git pull --rebase origin main || true
-          git push origin main || true
+          python tracker.py
+
+      - name: Commit and push changes if price updated
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "bot@example.com"
+          git add preishistorie.csv
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Automatisches Preis-Update (Alle 8h)" && git push)
