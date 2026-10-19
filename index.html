@@ -149,7 +149,6 @@
 </head>
 <body>
     <div class="container">
-        <!-- Kopfbereich -->
         <div class="header">
             <div>
                 <h1>🌴 Mein Türkei-Reiseportal (Juni 2027)</h1>
@@ -158,7 +157,6 @@
             <div class="sync-status" id="syncStatus">Verbinde mit Google Sheets...</div>
         </div>
 
-        <!-- KPI Karten -->
         <div class="kpi-row">
             <div class="kpi-card">
                 <div class="kpi-label">Gefilterte Hotels</div>
@@ -182,13 +180,11 @@
             </div>
         </div>
 
-        <!-- Regionen-Schnellwahl -->
         <div class="region-tabs" id="regionTabs"></div>
 
-        <!-- Kompakte Steuerungsleiste -->
         <div class="action-bar">
             <div class="search-box">
-                <input type="text" id="searchInput" placeholder="🔍 Hotel, Ort oder Stichwort suchen (z.B. Kumköy, Can Garden, Aquapark)...">
+                <input type="text" id="searchInput" placeholder="🔍 Hotel, Ort oder Stichwort suchen (z.B. Kumköy, Can Garden)...">
             </div>
             <div class="chip-quick" id="quickFavBtn">❤️ Favoriten (<span id="favQuickCount">0</span>)</div>
             <div class="chip-quick" id="quickWithPriceBtn">💶 Nur mit Preis</div>
@@ -209,7 +205,6 @@
             </button>
         </div>
 
-        <!-- Ausklappbares Filter-Panel -->
         <div class="filter-panel" id="filterDrawer">
             <div class="filter-grid">
                 <div class="filter-group">
@@ -226,7 +221,6 @@
                     <input type="range" id="budgetSlider" min="1200" max="3600" step="50" value="3600">
                 </div>
             </div>
-
             <div class="tags-wrapper">
                 <div class="tags-header">
                     <span>🏷️ Alle Schlagwörter (Klick zum Filtern):</span>
@@ -236,7 +230,6 @@
             </div>
         </div>
 
-        <!-- Ein-/Ausklappbares Diagramm -->
         <div class="chart-section" id="chartSection">
             <div class="chart-header">
                 <div>
@@ -249,7 +242,6 @@
             </div>
         </div>
 
-        <!-- Ergebnis-Zeile & Sortierung -->
         <div class="results-meta">
             <span id="resultsText">Lade Hotels...</span>
             <div class="sort-inline">
@@ -264,10 +256,8 @@
             </div>
         </div>
 
-        <!-- Karten-Grid -->
         <div class="grid" id="hotelGrid"></div>
 
-        <!-- Kompakte Vergleichs-Tabelle -->
         <div class="table-wrap" id="hotelTableWrap">
             <table class="comp-table">
                 <thead>
@@ -288,11 +278,6 @@
 
     <script>
         const SPREADSHEET_ID = "1MG0UwMZbmFoSxCdVp8pqspM5wgtgQlJGyoVesRXd5ag";
-
-        const FALLBACK_HOTELS = [
-            ["5f99a171-6caa-4aff-aa4b-d7dbf273672d", "Dream World Palace", "Side", "Çolaklı", "5", "Modern,Pärchen-Tipp,Aquapark,Top Preis-Leistung", "TRUE", ""],
-            ["9dbdb787-f9fa-329a-87c2-d67851e47fae", "Can Garden Resort", "Side", "Çolaklı", "5", "Modern,Top Preis-Leistung", "TRUE", "https://www.holidaycheck.de/ho/angebote-can-garden-resort/9dbdb787-f9fa-329a-87c2-d67851e47fae/package?_offer=airport:~FMO,deal:1,departureDate:2027-06-14,duration:7,maxP:1000,returnDate:2027-06-28,rooms:a-a"]
-        ];
 
         let allHotels = [];
         let favorites = JSON.parse(localStorage.getItem('favHotels_2027') || '[]');
@@ -424,16 +409,15 @@
             });
         }
 
+        // DIE REPARATUR: Keine 404-Fehler mehr durch Platzhalter-IDs
         function buildHolidayCheckUrl(hotel) {
+            // 1. Wenn Spalte H einen echten Link hat, nimm exakt diesen
             if (hotel.url && hotel.url.length > 5 && hotel.url.startsWith('http')) {
                 return hotel.url;
             }
-            if (hotel.id && hotel.id.length > 20 && !hotel.id.startsWith('1111') && !hotel.id.startsWith('2222') && !hotel.id.startsWith('3333') && !hotel.id.startsWith('4444') && !hotel.id.startsWith('4545') && !hotel.id.startsWith('1a1a')) {
-                const slug = hotel.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-                return `https://www.holidaycheck.de/ho/angebote-${slug}/${hotel.id}/package?_offer=airport:~BRE~FMO,deal:1,departureDate:2027-06-14,duration:7,returnDate:2027-06-30,rooms:a-a`;
-            }
-            const q = encodeURIComponent(hotel.name + " " + hotel.region);
-            return `https://www.google.com/search?q=${encodeURIComponent('site:holidaycheck.de ' + hotel.name + ' ' + hotel.region)}`;
+            // 2. Ansonsten: Keine waghalsigen UUID-Basteleien mehr! Leite sicher auf die HolidayCheck-Suchseite.
+            const searchTerm = encodeURIComponent(hotel.name + " " + hotel.region);
+            return `https://www.holidaycheck.de/s/${searchTerm}`;
         }
 
         function processDataAndRender(hotelRows, historyRows, statusMsg) {
@@ -458,7 +442,6 @@
             });
 
             globalAllTimes = Array.from(allTimestampsSet).sort();
-
             const tagsSet = new Set();
             allHotels = [];
 
@@ -485,21 +468,12 @@
                 tags.forEach(t => tagsSet.add(t));
 
                 allHotels.push({
-                    id,
-                    name,
-                    region,
-                    ort,
-                    stars,
-                    tags,
+                    id, name, region, ort, stars, tags,
                     url: buildHolidayCheckUrl({ id, name, region, url: customUrl }),
                     sheetCurrentPrice: sheetCurrent,
                     currentPrice: sheetCurrent,
-                    prevPrice: prev,
-                    minPrice: min,
-                    maxPrice: max,
-                    diffPrev: diffPrev,
-                    timeMap: stats.timeMap,
-                    note: ""
+                    prevPrice: prev, minPrice: min, maxPrice: max,
+                    diffPrev: diffPrev, timeMap: stats.timeMap, note: ""
                 });
             });
 
@@ -529,13 +503,9 @@
 
         function buildRegionTabs() {
             const counts = { ALL: allHotels.length };
-            allHotels.forEach(h => {
-                counts[h.region] = (counts[h.region] || 0) + 1;
-            });
-
+            allHotels.forEach(h => { counts[h.region] = (counts[h.region] || 0) + 1; });
             const container = document.getElementById('regionTabs');
             container.innerHTML = '';
-
             const regions = ['ALL', ...Object.keys(counts).filter(r => r !== 'ALL').sort()];
             regions.forEach(reg => {
                 const tab = document.createElement('div');
@@ -552,21 +522,18 @@
         }
 
         async function init() {
-            processDataAndRender(FALLBACK_HOTELS, [["2026-10-17 21:12", "Dream World Palace", "1682"]], "Verbinde...");
-
             try {
                 const [liveHotels, liveHistory] = await Promise.all([
                     fetchSheetViaJSONP(SPREADSHEET_ID, 'hotels'),
                     fetchSheetViaJSONP(SPREADSHEET_ID, 'preishistorie').catch(() => [])
                 ]);
-
                 if (liveHotels && liveHotels.length > 0) {
                     processDataAndRender(liveHotels, liveHistory, "🟢 Live mit Google Sheets verbunden");
                     document.getElementById('syncStatus').style.background = "rgba(5, 150, 105, 0.35)";
                 }
             } catch (e) {
-                console.warn("Fehler beim Live-Abruf:", e);
-                document.getElementById('syncStatus').textContent = "⚠️ Lokaler Modus";
+                document.getElementById('syncStatus').textContent = "⚠️ Ladefehler";
+                document.getElementById('syncStatus').style.background = "rgba(220, 38, 38, 0.3)";
             }
         }
 
@@ -583,35 +550,22 @@
             });
 
             document.getElementById('quickFavBtn').addEventListener('click', (e) => {
-                onlyFavs = !onlyFavs;
-                e.currentTarget.classList.toggle('fav-active', onlyFavs);
-                render();
+                onlyFavs = !onlyFavs; e.currentTarget.classList.toggle('fav-active', onlyFavs); render();
             });
-
             document.getElementById('quickWithPriceBtn').addEventListener('click', (e) => {
-                onlyWithPrice = !onlyWithPrice;
-                e.currentTarget.classList.toggle('active', onlyWithPrice);
-                render();
+                onlyWithPrice = !onlyWithPrice; e.currentTarget.classList.toggle('active', onlyWithPrice); render();
             });
-
             document.getElementById('quick2kBtn').addEventListener('click', (e) => {
-                onlyUnder2k = !onlyUnder2k;
-                e.currentTarget.classList.toggle('active', onlyUnder2k);
+                onlyUnder2k = !onlyUnder2k; e.currentTarget.classList.toggle('active', onlyUnder2k);
                 document.getElementById('budgetSlider').value = onlyUnder2k ? 2000 : 3600;
                 document.getElementById('budgetVal').textContent = onlyUnder2k ? 'bis 2000 €' : 'Alle';
                 render();
             });
-
             document.getElementById('quickSwimBtn').addEventListener('click', (e) => {
-                onlySwimUp = !onlySwimUp;
-                e.currentTarget.classList.toggle('active', onlySwimUp);
-                render();
+                onlySwimUp = !onlySwimUp; e.currentTarget.classList.toggle('active', onlySwimUp); render();
             });
-
             document.getElementById('quickBeachBtn').addEventListener('click', (e) => {
-                onlyBeach = !onlyBeach;
-                e.currentTarget.classList.toggle('active', onlyBeach);
-                render();
+                onlyBeach = !onlyBeach; e.currentTarget.classList.toggle('active', onlyBeach); render();
             });
 
             document.getElementById('resetFiltersBtn').addEventListener('click', () => {
@@ -619,36 +573,24 @@
                 document.getElementById('starsSelect').value = '0';
                 document.getElementById('budgetSlider').value = 3600;
                 document.getElementById('budgetVal').textContent = 'Alle';
-                activeRegion = 'ALL';
-                activeTag = null;
-                onlyFavs = false;
-                onlyWithPrice = false;
-                onlyUnder2k = false;
-                onlySwimUp = false;
-                onlyBeach = false;
+                activeRegion = 'ALL'; activeTag = null; onlyFavs = false; onlyWithPrice = false; onlyUnder2k = false; onlySwimUp = false; onlyBeach = false;
                 document.querySelectorAll('.chip-quick').forEach(c => c.classList.remove('active', 'fav-active'));
                 document.querySelectorAll('.tag-filter').forEach(c => c.classList.remove('active'));
-                buildRegionTabs();
-                render();
+                buildRegionTabs(); render();
             });
         }
 
         window.toggleFav = function(hotelName) {
-            if (favorites.includes(hotelName)) {
-                favorites = favorites.filter(n => n !== hotelName);
-            } else {
-                favorites.push(hotelName);
-            }
+            if (favorites.includes(hotelName)) favorites = favorites.filter(n => n !== hotelName);
+            else favorites.push(hotelName);
             localStorage.setItem('favHotels_2027', JSON.stringify(favorites));
+            document.getElementById('favQuickCount').textContent = favorites.length;
             render();
         };
 
         window.toggleChartPin = function(hotelName) {
-            if (chartPinned.includes(hotelName)) {
-                chartPinned = chartPinned.filter(n => n !== hotelName);
-            } else {
-                chartPinned.push(hotelName);
-            }
+            if (chartPinned.includes(hotelName)) chartPinned = chartPinned.filter(n => n !== hotelName);
+            else chartPinned.push(hotelName);
             localStorage.setItem('chartPinned_2027', JSON.stringify(chartPinned));
             if (!chartVisible) window.toggleChartSection();
             else render();
@@ -702,7 +644,6 @@
                 const cheapest = [...withPrice].sort((a, b) => a.currentPrice - b.currentPrice)[0];
                 document.getElementById('kpiBestPrice').textContent = `${cheapest.currentPrice} €`;
                 document.getElementById('kpiBestHotel').textContent = cheapest.name;
-
                 const bestDrop = [...withPrice].sort((a, b) => a.diffPrev - b.diffPrev)[0];
                 if (bestDrop.diffPrev < 0) {
                     document.getElementById('kpiBestDrop').textContent = `${bestDrop.diffPrev} €`;
@@ -713,25 +654,23 @@
                 }
             } else {
                 document.getElementById('kpiBestPrice').textContent = '-';
-                document.getElementById('kpiBestHotel').textContent = 'Auf ✏️ klicken zum Merken';
+                document.getElementById('kpiBestHotel').textContent = 'Keine Preise in Ansicht';
             }
 
             document.getElementById('resultsText').textContent = `${filtered.length} passende Hotels gefunden`;
 
             const grid = document.getElementById('hotelGrid');
             const tbody = document.getElementById('hotelTableBody');
-            grid.innerHTML = '';
-            tbody.innerHTML = '';
+            grid.innerHTML = ''; tbody.innerHTML = '';
 
             if (filtered.length === 0) {
-                grid.innerHTML = `<div class="empty-state">Keine Hotels für diese Filter-Kombination gefunden. Klicke auf „Filter zurücksetzen“!</div>`;
+                grid.innerHTML = `<div class="empty-state">Keine Hotels für diese Filter gefunden. Klicke auf „Filter zurücksetzen“!</div>`;
             }
 
             filtered.forEach(h => {
                 const isFav = favorites.includes(h.name);
                 const isPinned = chartPinned.includes(h.name);
                 const safeName = h.name.replace(/'/g, "\\'");
-
                 let budgetClass = '';
                 if (h.currentPrice !== null) {
                     if (h.currentPrice <= 1850) budgetClass = 'in-budget';
@@ -746,10 +685,7 @@
                     else trendHTML = `<span class="trend same">→ ±0 €</span>`;
                 }
 
-                let allTimeBadge = '';
-                if (h.currentPrice !== null && h.minPrice !== null && h.currentPrice <= h.minPrice) {
-                    allTimeBadge = `<span class="alltime-badge">🔥 Bestpreis</span>`;
-                }
+                let allTimeBadge = (h.currentPrice !== null && h.minPrice !== null && h.currentPrice <= h.minPrice) ? `<span class="alltime-badge">🔥 Bestpreis</span>` : '';
 
                 const tagsHTML = h.tags.map(t => {
                     const low = t.toLowerCase();
@@ -764,57 +700,44 @@
                 card.innerHTML = `
                     <div>
                         <div class="card-header">
-                            <div class="card-title">
-                                ${h.name}
-                                <span class="stars">${'★'.repeat(Math.floor(h.stars))}</span>
-                            </div>
+                            <div class="card-title">${h.name} <span class="stars">${'★'.repeat(Math.floor(h.stars))}</span></div>
                             <div class="action-icons">
                                 <button class="icon-btn" onclick="editHotelManual('${safeName}')" title="Eigenen Preis oder Notiz eintragen">✏️</button>
-                                <button class="icon-btn ${isPinned ? 'chart-active' : ''}" onclick="toggleChartPin('${safeName}')" title="Im Preisdiagramm vergleichen">📈</button>
-                                <button class="icon-btn ${isFav ? 'fav-active' : ''}" onclick="toggleFav('${safeName}')" title="Als Favorit speichern">${isFav ? '❤️' : '🤍'}</button>
+                                <button class="icon-btn ${isPinned ? 'chart-active' : ''}" onclick="toggleChartPin('${safeName}')">📈</button>
+                                <button class="icon-btn ${isFav ? 'fav-active' : ''}" onclick="toggleFav('${safeName}')">${isFav ? '❤️' : '🤍'}</button>
                             </div>
                         </div>
-                        <div class="location-badge">📍 ${h.region}${h.ort ? ' • ' + h.ort : ''} (${h.stars}★)</div>
+                        <div class="location-badge">📍 ${h.region}${h.ort ? ' • ' + h.ort : ''}</div>
                         <div class="tags-wrap">${tagsHTML}</div>
                         ${noteHTML}
                     </div>
-
                     <div>
                         <div class="price-section">
                             <div class="price-row">
-                                <div class="price-tag ${h.currentPrice && h.currentPrice <= 2000 ? 'green' : ''} ${h.currentPrice === null ? 'waiting' : ''}">
-                                    ${h.currentPrice !== null ? h.currentPrice + ' €' : 'Noch kein Preis (✏️)'}
-                                </div>
-                                <div class="badges-right">
-                                    ${allTimeBadge}
-                                    ${trendHTML}
-                                </div>
+                                <div class="price-tag ${h.currentPrice && h.currentPrice <= 2000 ? 'green' : ''} ${h.currentPrice === null ? 'waiting' : ''}">${h.currentPrice !== null ? h.currentPrice + ' €' : 'Kein Link (✏️)'}</div>
+                                <div class="badges-right">${allTimeBadge}${trendHTML}</div>
                             </div>
                             <div class="meta-stats">
-                                <span>Tiefstpreis: <b>${h.minPrice ? h.minPrice + ' €' : '-'}</b></span>
-                                <span>Höchstpreis: <b>${h.maxPrice ? h.maxPrice + ' €' : '-'}</b></span>
+                                <span>Tief: <b>${h.minPrice ? h.minPrice + ' €' : '-'}</b></span>
+                                <span>Hoch: <b>${h.maxPrice ? h.maxPrice + ' €' : '-'}</b></span>
                             </div>
                         </div>
-                        <div class="btn-row">
-                            <a href="${h.url}" target="_blank" class="offer-btn">HolidayCheck-Angebot prüfen ↗</a>
-                        </div>
-                    </div>
-                `;
+                        <a href="${h.url}" target="_blank" class="offer-btn">Zum Angebot ↗</a>
+                    </div>`;
                 grid.appendChild(card);
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>
                         <button class="icon-btn ${isFav ? 'fav-active' : ''}" style="display:inline-flex;" onclick="toggleFav('${safeName}')">${isFav ? '❤️' : '🤍'}</button>
-                        <button class="icon-btn" style="display:inline-flex;" onclick="editHotelManual('${safeName}')" title="Preis/Notiz bearbeiten">✏️</button>
+                        <button class="icon-btn" style="display:inline-flex;" onclick="editHotelManual('${safeName}')">✏️</button>
                     </td>
                     <td><b>${h.name}</b> <span class="stars">${h.stars}★</span></td>
-                    <td>📍 ${h.region}${h.ort ? ' (' + h.ort + ')' : ''}</td>
+                    <td>📍 ${h.region}</td>
                     <td><div class="tags-wrap" style="margin:0;">${tagsHTML}</div></td>
                     <td><b style="font-size:15px; color:${h.currentPrice && h.currentPrice <= 2000 ? 'var(--green)' : 'var(--primary)'};">${h.currentPrice !== null ? h.currentPrice + ' €' : '-'}</b></td>
                     <td><span style="font-size:12px; color:#92400e;">${h.note || '-'}</span></td>
-                    <td><a href="${h.url}" target="_blank" style="color:var(--primary); font-weight:700; text-decoration:none;">Angebot ↗</a></td>
-                `;
+                    <td><a href="${h.url}" target="_blank" style="color:var(--primary); font-weight:700; text-decoration:none;">Link ↗</a></td>`;
                 tbody.appendChild(tr);
             });
 
@@ -836,33 +759,13 @@
             const datasets = chartHotels.map((h, i) => ({
                 label: h.name,
                 data: globalAllTimes.length > 0 ? globalAllTimes.map(t => h.timeMap[t] !== undefined ? h.timeMap[t] : h.currentPrice) : [h.currentPrice],
-                borderColor: colors[i % colors.length],
-                backgroundColor: colors[i % colors.length],
-                borderWidth: 2.5,
-                tension: 0.2,
-                spanGaps: true
+                borderColor: colors[i % colors.length], backgroundColor: colors[i % colors.length], borderWidth: 2.5, tension: 0.2, spanGaps: true
             }));
 
             const ctx = document.getElementById('comparisonChart').getContext('2d');
             if (chartInstance) chartInstance.destroy();
-
-            chartInstance = new Chart(ctx, {
-                type: 'line',
-                data: { labels: labels, datasets: datasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11, weight: 'bold' } } }
-                    },
-                    scales: {
-                        y: { ticks: { callback: v => v + ' €' }, grid: { color: '#f1f5f9' } },
-                        x: { grid: { display: false } }
-                    }
-                }
-            });
+            chartInstance = new Chart(ctx, { type: 'line', data: { labels: labels, datasets: datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11, weight: 'bold' } } } }, scales: { y: { ticks: { callback: v => v + ' €' }, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } } } });
         }
-
         init();
     </script>
 </body>
