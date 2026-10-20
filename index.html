@@ -146,6 +146,179 @@
         .price-tag.waiting { font-size: 13px; color: var(--muted); font-weight: 700; }
 
         .badges-right { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+        .trend { font-size: 11px; font-weight: 700; padding: 2px 6px; border-Das ist eine hervorragende Idee und eigentlich eine der wichtigsten Funktionen für ein echtes Reiseportal! Ein Preis-Drop bringt schließlich nichts, wenn das Hotel nur zu 60 % weiterempfohlen wird.
+
+Da sich Hotelbewertungen (im Gegensatz zu Preisen) nur extrem langsam verändern (meist nur um 0,1 Punkte alle paar Monate), ist es am saubersten und einfachsten, diese Daten **nicht** jeden Tag mühsam durch den Scraper zu jagen, sondern sie als feste Eigenschaften im Google Sheet zu hinterlegen. Das Dashboard liest sie dann automatisch aus.
+
+Wir machen das genau im Stil von HolidayCheck: Ein schicker blauer Badge (👍 95%) und daneben die Sonnen (☀️ 5,7 / 6). Außerdem bauen wir direkt einen **Filter** ("Nur Hotels ab 90 %") und eine **Sortierung** ("Beste Bewertung zuerst") ein.
+
+### Schritt 1: Google Sheet vorbereiten
+1. Öffne deine Google Tabelle und gehe in den Reiter **hotels**.
+2. Da deine Tabelle bisher 8 Spalten hatte (A bis H), nutzt du jetzt die nächsten zwei freien Spalten:
+   * Schreibe in **Spalte I** (Zeile 1): `Bewertung`
+   * Schreibe in **Spalte J** (Zeile 1): `Weiterempfehlung`
+3. Trage nun bei ein paar Hotels Testwerte ein (z. B. in Spalte I `5,7` und in Spalte J `95`). *(Wichtig: In Spalte J nur die Zahl eintragen, ohne %-Zeichen).*
+
+### Schritt 2: Dashboard-Code aktualisieren
+Ich habe den Code so angepasst, dass er nun **10 Spalten** ausliest, die HolidayCheck-Badges exakt wie auf deinem Screenshot generiert und die neuen Filter/Sortierungen enthält.
+
+Kopiere diesen gesamten Code und ersetze damit deine **`index.html`** auf GitHub:
+
+```html
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mein Reise-Portal | Türkische Riviera 2027</title>
+    <script src="[https://cdn.jsdelivr.net/npm/chart.js](https://cdn.jsdelivr.net/npm/chart.js)"></script>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --primary-dark: #1557b0;
+            --bg: #f1f5f9;
+            --card-bg: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --green: #059669;
+            --green-bg: #d1fae5;
+            --orange: #d97706;
+            --orange-bg: #fef3c7;
+            --red: #dc2626;
+            --red-bg: #fee2e2;
+            --purple: #7c3aed;
+        }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 12px; }
+        .container { max-width: 1420px; margin: 0 auto; }
+
+        /* Header */
+        .header { background: linear-gradient(135deg, #1e40af, #1d4ed8); color: white; padding: 16px 20px; border-radius: 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(30,64,175,0.15); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .header h1 { margin: 0 0 4px 0; font-size: 20px; }
+        .header p { margin: 0; font-size: 12px; opacity: 0.9; }
+        .sync-status { background: rgba(255,255,255,0.18); color: white; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+
+        /* KPI Row */
+        .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 12px; }
+        .kpi-card { background: var(--card-bg); padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.03); cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
+        .kpi-card:hover { border-color: #cbd5e1; transform: translateY(-1px); }
+        .kpi-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+        .kpi-val { font-size: 18px; font-weight: 800; color: var(--text); }
+        .kpi-sub { font-size: 11px; color: var(--green); font-weight: 600; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        /* Main View Switcher + Region Tabs */
+        .top-nav-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+        .view-switcher { display: flex; background: #e2e8f0; padding: 4px; border-radius: 11px; gap: 4px; }
+        .view-btn { border: none; background: transparent; padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 800; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.15s; }
+        .view-btn:hover { color: #0f172a; }
+        .view-btn.active { background: white; color: var(--primary); box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+
+        .region-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+        .region-tab { background: var(--card-bg); border: 1px solid var(--border); padding: 7px 12px; border-radius: 9px; font-size: 12px; font-weight: 700; color: #334155; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 6px; transition: all 0.15s; }
+        .region-tab:hover { background: #f8fafc; border-color: #cbd5e1; }
+        .region-tab.active { background: var(--primary); color: white; border-color: var(--primary); box-shadow: 0 2px 8px rgba(26,115,232,0.25); }
+        .region-count { font-size: 11px; background: rgba(0,0,0,0.08); padding: 1px 6px; border-radius: 5px; }
+        .region-tab.active .region-count { background: rgba(255,255,255,0.25); color: white; }
+
+        /* Action Bar */
+        .action-bar { background: var(--card-bg); padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
+        .search-box { flex: 1; min-width: 200px; }
+        .search-box input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; outline: none; background: #f8fafc; }
+        .search-box input:focus { border-color: var(--primary); background: #ffffff; box-shadow: 0 0 0 3px rgba(26,115,232,0.15); }
+
+        .chip-quick { padding: 8px 11px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #f1f5f9; color: #334155; border: 1px solid var(--border); cursor: pointer; user-select: none; transition: all 0.15s; display: flex; align-items: center; gap: 5px; }
+        .chip-quick:hover { background: #e2e8f0; }
+        .chip-quick.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .chip-quick.fav-active { background: #e11d48; color: white; border-color: #e11d48; }
+
+        .btn-toggle { background: #f8fafc; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #1e293b; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.15s; }
+        .btn-toggle:hover { background: #e2e8f0; }
+        .btn-toggle.active { background: #eff6ff; border-color: var(--primary); color: var(--primary); }
+
+        /* Filter Drawer */
+        .filter-panel { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border); padding: 16px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); display: none; }
+        .filter-panel.is-open { display: block; }
+        .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 14px; }
+        .filter-group { display: flex; flex-direction: column; gap: 5px; }
+        .filter-group label { font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; }
+        .filter-group select { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: #f8fafc; font-weight: 600; }
+        .filter-group input[type="range"] { accent-color: var(--primary); margin-top: 6px; cursor: pointer; }
+
+        .tags-wrapper { padding-top: 12px; border-top: 1px solid var(--border); }
+        .tags-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; }
+        .tags-cloud { display: flex; flex-wrap: wrap; gap: 6px; max-height: 150px; overflow-y: auto; padding-right: 4px; }
+        .tag-filter { padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; background: #f8fafc; color: #475569; border: 1px solid var(--border); cursor: pointer; user-select: none; }
+        .tag-filter:hover { background: #e2e8f0; }
+        .tag-filter.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .reset-link { background: none; border: none; color: var(--red); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; }
+
+        /* Enhanced Chart Section */
+        .chart-section { background: var(--card-bg); padding: 16px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.03); margin-bottom: 14px; display: none; }
+        .chart-section.is-open { display: block; }
+        .chart-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+        .chart-title { font-size: 15px; font-weight: 800; margin: 0 0 3px 0; color: #1e293b; }
+        .chart-sub { font-size: 11px; color: var(--muted); }
+        
+        .chart-controls-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+        .preset-group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .preset-btn { padding: 6px 10px; border-radius: 7px; font-size: 11px; font-weight: 700; border: 1px solid var(--border); background: #f8fafc; color: #334155; cursor: pointer; transition: all 0.15s; }
+        .preset-btn:hover { background: #e2e8f0; }
+        .preset-btn.active { background: #1e293b; color: white; border-color: #1e293b; }
+        .preset-btn.clear-btn { color: var(--red); border-color: #fecaca; background: #fff5f5; }
+
+        .mode-switch { display: flex; background: #f1f5f9; padding: 3px; border-radius: 8px; gap: 3px; }
+        .mode-btn { border: none; background: transparent; padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; color: #475569; cursor: pointer; }
+        .mode-btn.active { background: white; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+        .chart-box { height: 290px; position: relative; }
+
+        /* Results & Sort Meta */
+        .results-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px; font-weight: 700; color: #475569; flex-wrap: wrap; gap: 8px; }
+        .sort-inline { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+        .sort-inline select { padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border); background: white; font-weight: 700; font-size: 12px; }
+
+        /* Cards Grid */
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(305px, 1fr)); gap: 14px; margin-bottom: 30px; }
+        .card { background: var(--card-bg); border-radius: 12px; padding: 14px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.02); display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.15s, box-shadow 0.15s; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.06); }
+        .card.in-budget { border-left: 5px solid var(--green); }
+        .card.near-budget { border-left: 5px solid var(--orange); }
+        .card.over-budget { border-left: 5px solid var(--red); }
+
+        .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 4px; }
+        .card-title { font-size: 15px; font-weight: 800; color: #0f172a; line-height: 1.3; cursor: pointer; }
+        .card-title:hover { color: var(--primary); }
+        .stars { color: #f59e0b; font-size: 12px; margin-left: 4px; }
+
+        /* Rating Badges (HolidayCheck Style) */
+        .hc-badges { display: flex; gap: 0; align-items: center; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); width: fit-content; margin-bottom: 8px; }
+        .hc-rec { background: #1557b0; color: white; font-weight: 800; font-size: 12px; padding: 3px 7px; display: flex; align-items: center; gap: 4px; }
+        .hc-rat { background: white; color: #0f172a; font-weight: 800; font-size: 12px; padding: 3px 7px; display: flex; align-items: center; gap: 4px; border-left: 1px solid var(--border); }
+        .hc-sun { color: #f59e0b; }
+
+        .action-icons { display: flex; gap: 4px; flex-shrink: 0; }
+        .icon-btn { background: #f8fafc; border: 1px solid var(--border); border-radius: 7px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; transition: all 0.15s; }
+        .icon-btn:hover { background: #e2e8f0; }
+        .icon-btn.fav-active { background: #ffe4e6; border-color: #fda4af; }
+        .icon-btn.chart-active { background: #dbeafe; border-color: #93c5fd; }
+
+        .location-badge { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+        .tags-wrap { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+        .tag-badge { font-size: 10px; background: #f1f5f9; color: #334155; padding: 3px 7px; border-radius: 5px; font-weight: 600; }
+        .tag-badge.swimup { background: #ecfeff; color: #0891b2; border: 1px solid #a5f3fc; }
+        .tag-badge.strand { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+
+        .missing-link-badge { font-size: 10px; font-weight: 700; background: #fee2e2; color: #991b1b; padding: 3px 6px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+
+        .price-section { background: #f8fafc; padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e2e8f0; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+        .price-section:hover { background: #eff6ff; border-color: #93c5fd; }
+        .price-row { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px; }
+        .price-tag { font-size: 21px; font-weight: 900; color: var(--primary); }
+        .price-tag.green { color: var(--green); }
+        .price-tag.waiting { font-size: 13px; color: var(--muted); font-weight: 700; }
+
+        .badges-right { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
         .trend { font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 5px; }
         .trend.down { background: var(--green-bg); color: var(--green); }
         .trend.up { background: var(--red-bg); color: var(--red); }
@@ -173,9 +346,9 @@
         .matrix-table th { background: #f8fafc; color: #475569; font-weight: 800; text-transform: uppercase; font-size: 11px; padding: 10px 10px; text-align: left; border-bottom: 2px solid var(--border); position: sticky; top: 0; z-index: 2; white-space: nowrap; }
         .matrix-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
         .matrix-table tr:hover td { background-color: #f8fafc; }
-        .matrix-hotel-cell { font-weight: 800; color: #0f172a; cursor: pointer; min-width: 210px; }
+        .matrix-hotel-cell { font-weight: 800; color: #0f172a; cursor: pointer; min-width: 230px; }
         .matrix-hotel-cell:hover { color: var(--primary); }
-        .matrix-sub { font-size: 10px; color: var(--muted); font-weight: 600; display: block; }
+        .matrix-sub { font-size: 10px; color: var(--muted); font-weight: 600; display: block; margin-bottom: 4px; }
         .heat-cell { text-align: right; font-weight: 700; white-space: nowrap; border-left: 1px solid #f1f5f9; }
         .heat-down { background: #ecfdf5 !important; color: #047857; }
         .heat-up { background: #fef2f2 !important; color: #b91c1c; }
@@ -287,6 +460,15 @@
                     </select>
                 </div>
                 <div class="filter-group">
+                    <label>👍 Weiterempfehlung (HC)</label>
+                    <select id="recSelect">
+                        <option value="0">Alle anzeigen</option>
+                        <option value="90">Mindestens 90%</option>
+                        <option value="80">Mindestens 80%</option>
+                        <option value="70">Mindestens 70%</option>
+                    </select>
+                </div>
+                <div class="filter-group">
                     <label>💰 Max. Gesamtbudget: <span id="budgetVal" style="color:var(--primary); font-weight:800;">Alle</span></label>
                     <input type="range" id="budgetSlider" min="1200" max="3600" step="50" value="3600">
                 </div>
@@ -337,6 +519,7 @@
                     <option value="FAV_FIRST">❤️ Favoriten & Günstigste zuerst</option>
                     <option value="PRICE_ASC">💶 Preis: Günstigste zuerst</option>
                     <option value="PRICE_DESC">💶 Preis: Höchste zuerst</option>
+                    <option value="RATING_DESC">☀️ Beste Bewertung zuerst</option>
                     <option value="DROP_DESC">📉 Größte Senkung (zum Vortag)</option>
                     <option value="DEAL_DESC">💎 Größter Rabatt vom Höchstpreis</option>
                     <option value="VOLATILE_DESC">📊 Größte Preis-Spanne (Schwankung)</option>
@@ -365,7 +548,8 @@
             <div class="modal-top">
                 <div>
                     <h2 id="modalTitle" style="margin:0 0 4px 0; font-size:19px;">Hotel</h2>
-                    <div id="modalMeta" style="font-size:12px; color:var(--muted); font-weight:600;"></div>
+                    <div id="modalMeta" style="font-size:12px; color:var(--muted); font-weight:600; margin-bottom: 6px;"></div>
+                    <div id="modalHCBadge"></div>
                     <div id="modalTags" class="tags-wrap" style="margin-top:6px; margin-bottom:0;"></div>
                 </div>
                 <div style="display:flex; gap:8px; align-items:center;">
@@ -417,40 +601,23 @@
         let chartInstance = null;
         let modalChartInstance = null;
         let currentModalHotel = null;
-        let globalAllTimes = []; // Array of { key, label, sortMs }
+        let globalAllTimes = [];
         let listenersInitialized = false;
 
-        // Hilfsfunktion: Beliebige Datumsstrings zuverlässig in Millisekunden + schönes Label umwandeln
         function parseTimeMeta(rawStr, occIndex) {
             const clean = String(rawStr || '').trim();
             let y = 2026, m = 1, d = 1, hr = 12, mi = 0, sc = 0;
             let hasTime = false;
 
-            // Format 1: YYYY-MM-DD (HH:mm(:ss))
             const isoMatch = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
-            // Format 2: DD.MM.YYYY (HH:mm(:ss))
             const deMatch = clean.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
 
             if (isoMatch) {
-                y = parseInt(isoMatch[1], 10);
-                m = parseInt(isoMatch[2], 10);
-                d = parseInt(isoMatch[3], 10);
-                if (isoMatch[4] !== undefined) {
-                    hr = parseInt(isoMatch[4], 10);
-                    mi = parseInt(isoMatch[5], 10);
-                    sc = isoMatch[6] ? parseInt(isoMatch[6], 10) : 0;
-                    hasTime = true;
-                }
+                y = parseInt(isoMatch[1], 10); m = parseInt(isoMatch[2], 10); d = parseInt(isoMatch[3], 10);
+                if (isoMatch[4] !== undefined) { hr = parseInt(isoMatch[4], 10); mi = parseInt(isoMatch[5], 10); sc = isoMatch[6] ? parseInt(isoMatch[6], 10) : 0; hasTime = true; }
             } else if (deMatch) {
-                d = parseInt(deMatch[1], 10);
-                m = parseInt(deMatch[2], 10);
-                y = parseInt(deMatch[3], 10);
-                if (deMatch[4] !== undefined) {
-                    hr = parseInt(deMatch[4], 10);
-                    mi = parseInt(deMatch[5], 10);
-                    sc = deMatch[6] ? parseInt(deMatch[6], 10) : 0;
-                    hasTime = true;
-                }
+                d = parseInt(deMatch[1], 10); m = parseInt(deMatch[2], 10); y = parseInt(deMatch[3], 10);
+                if (deMatch[4] !== undefined) { hr = parseInt(deMatch[4], 10); mi = parseInt(deMatch[5], 10); sc = deMatch[6] ? parseInt(deMatch[6], 10) : 0; hasTime = true; }
             }
 
             const sortMs = new Date(y, m - 1, d, hr, mi, sc).getTime() + (occIndex * 60000);
@@ -460,11 +627,9 @@
             const min = String(mi).padStart(2, '0');
 
             let label = `${dd}.${mm}.`;
-            if (hasTime) {
-                label = `${dd}.${mm}. ${hh}:${min}`;
-            } else if (occIndex > 0) {
-                label = `${dd}.${mm}. (#${occIndex + 1})`;
-            }
+            if (hasTime) label = `${dd}.${mm}. ${hh}:${min}`;
+            else if (occIndex > 0) label = `${dd}.${mm}. (#${occIndex + 1})`;
+            
             return { sortMs, label, fullDate: `${dd}.${mm}.${y}${hasTime ? ' ' + hh + ':' + min : (occIndex > 0 ? ' (Lauf ' + (occIndex + 1) + ')' : '')}` };
         }
 
@@ -522,10 +687,7 @@
             return new Promise((resolve, reject) => {
                 const cbName = 'gvizCb_' + Math.floor(Math.random() * 1e9);
                 const script = document.createElement('script');
-                const timer = setTimeout(() => {
-                    cleanup();
-                    reject(new Error('Timeout'));
-                }, 8000);
+                const timer = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, 8000);
 
                 function cleanup() {
                     clearTimeout(timer);
@@ -535,66 +697,39 @@
 
                 window[cbName] = function(res) {
                     cleanup();
-                    if (!res || res.status === 'error' || !res.table) {
-                        reject(new Error('Sheet Error'));
-                        return;
-                    }
+                    if (!res || res.status === 'error' || !res.table) { reject(new Error('Sheet Error')); return; }
                     const rows = [];
                     (res.table.rows || []).forEach(r => {
                         const cells = (r && r.c) ? r.c : [];
                         const rowVals = [];
-                        for (let i = 0; i < 8; i++) {
+                        // Lese jetzt 10 Spalten aus (inkl. Bewertung & Weiterempfehlung)
+                        for (let i = 0; i < 10; i++) {
                             const c = cells[i];
-                            if (!c || (c.v === null && c.f === undefined)) {
-                                rowVals.push('');
-                            } else if (i === 0 && typeof c.v === 'string' && c.v.startsWith('Date(')) {
+                            if (!c || (c.v === null && c.f === undefined)) rowVals.push('');
+                            else if (i === 0 && typeof c.v === 'string' && c.v.startsWith('Date(')) {
                                 const m = c.v.match(/Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/);
                                 if (m) {
-                                    const yr = m[1];
-                                    const mo = String(parseInt(m[2], 10) + 1).padStart(2, '0');
-                                    const da = String(m[3]).padStart(2, '0');
-                                    const hr = m[4] !== undefined ? parseInt(m[4], 10) : 0;
-                                    const mi = m[5] !== undefined ? parseInt(m[5], 10) : 0;
-                                    if (hr > 0 || mi > 0) {
-                                        rowVals.push(`${yr}-${mo}-${da} ${String(hr).padStart(2, '0')}:${String(mi).padStart(2, '0')}`);
-                                    } else {
-                                        rowVals.push(c.f ? String(c.f).trim() : `${yr}-${mo}-${da}`);
-                                    }
-                                } else {
-                                    rowVals.push(c.f ? String(c.f).trim() : String(c.v).trim());
-                                }
-                            } else if (typeof c.v === 'number') {
-                                rowVals.push(String(c.v));
-                            } else if (c.f !== undefined && c.f !== null) {
-                                rowVals.push(String(c.f).trim());
-                            } else {
-                                rowVals.push(String(c.v).trim());
-                            }
+                                    const yr = m[1], mo = String(parseInt(m[2], 10) + 1).padStart(2, '0'), da = String(m[3]).padStart(2, '0');
+                                    const hr = m[4] !== undefined ? parseInt(m[4], 10) : 0, mi = m[5] !== undefined ? parseInt(m[5], 10) : 0;
+                                    rowVals.push((hr > 0 || mi > 0) ? `${yr}-${mo}-${da} ${String(hr).padStart(2, '0')}:${String(mi).padStart(2, '0')}` : (c.f ? String(c.f).trim() : `${yr}-${mo}-${da}`));
+                                } else rowVals.push(c.f ? String(c.f).trim() : String(c.v).trim());
+                            } else if (typeof c.v === 'number') rowVals.push(String(c.v));
+                            else if (c.f !== undefined && c.f !== null) rowVals.push(String(c.f).trim());
+                            else rowVals.push(String(c.v).trim());
                         }
                         if (rowVals.some(x => x !== '')) rows.push(rowVals);
                     });
                     resolve(rows);
                 };
-
-                script.onerror = function() {
-                    cleanup();
-                    reject(new Error('Network Error'));
-                };
-
-                script.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=responseHandler:${cbName}&headers=0&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
+                script.onerror = function() { cleanup(); reject(new Error('Network Error')); };
+                script.src = `[https://docs.google.com/spreadsheets/d/$](https://docs.google.com/spreadsheets/d/$){sheetId}/gviz/tq?tqx=responseHandler:${cbName}&headers=0&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
                 document.body.appendChild(script);
             });
         }
 
         function buildHotelUrl(hotel) {
-            if (hotel.rawUrl && hotel.rawUrl.length > 5 && hotel.rawUrl.startsWith('http')) {
-                return { url: hotel.rawUrl, hasDirectLink: true };
-            }
-            const searchTerm = encodeURIComponent(hotel.name + " " + hotel.region);
-            return {
-                url: `https://www.holidaycheck.de/s/${searchTerm}`,
-                hasDirectLink: false
-            };
+            if (hotel.rawUrl && hotel.rawUrl.length > 5 && hotel.rawUrl.startsWith('http')) return { url: hotel.rawUrl, hasDirectLink: true };
+            return { url: `[https://www.holidaycheck.de/s/$](https://www.holidaycheck.de/s/$){encodeURIComponent(hotel.name + " " + hotel.region)}`, hasDirectLink: false };
         }
 
         function processDataAndRender(hotelRows, historyRows, statusMsg) {
@@ -609,7 +744,8 @@
                 if (!rawTime || !hName || rawTime.toLowerCase().includes('zeitstempel')) return;
 
                 const pVal = parseFloat(rawPrice);
-                const isValidPrice = !isNaN(pVal) && pVal >= 400 && pVal <= 20000;
+                // WICHTIG: Erhöhter Filter auf 1000 € um Fehler aus der Vergangenheit zu blockieren
+                const isValidPrice = !isNaN(pVal) && pVal >= 1000 && pVal <= 20000;
                 if (!isValidPrice) return;
 
                 if (!seenHotelTimeCount[hName]) seenHotelTimeCount[hName] = {};
@@ -619,27 +755,15 @@
                 const timeKey = occIndex === 0 ? rawTime : `${rawTime}__#${occIndex + 1}`;
                 if (!timeRegistry[timeKey]) {
                     const meta = parseTimeMeta(rawTime, occIndex);
-                    timeRegistry[timeKey] = {
-                        key: timeKey,
-                        rawTime,
-                        occIndex,
-                        sortMs: meta.sortMs,
-                        label: meta.label,
-                        fullDate: meta.fullDate,
-                        hotelCount: 0
-                    };
+                    timeRegistry[timeKey] = { key: timeKey, rawTime, occIndex, sortMs: meta.sortMs, label: meta.label, fullDate: meta.fullDate, hotelCount: 0 };
                 }
                 timeRegistry[timeKey].hotelCount++;
 
-                if (!historyByHotel[hName]) {
-                    historyByHotel[hName] = { timeMap: {} };
-                }
+                if (!historyByHotel[hName]) historyByHotel[hName] = { timeMap: {} };
                 historyByHotel[hName].timeMap[timeKey] = pVal;
             });
 
-            // Chronologisch nach echtem Datum/Uhrzeit sortieren
             globalAllTimes = Object.values(timeRegistry).sort((a, b) => a.sortMs - b.sortMs);
-
             const tagsSet = new Set();
             allHotels = [];
 
@@ -654,14 +778,17 @@
                 const rawTags = (row[5] || '').trim();
                 const tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [];
                 const rawUrl = (row[7] || '').trim();
+                
+                // Neue Werte auslesen (Spalte I = 8, Spalte J = 9)
+                const ratingStr = (row[8] || '').toString().replace(',', '.').trim();
+                const rating = parseFloat(ratingStr) || null;
+                const recStr = (row[9] || '').toString().replace('%', '').trim();
+                const recommendation = parseInt(recStr) || null;
 
                 const timeMap = (historyByHotel[name] && historyByHotel[name].timeMap) ? historyByHotel[name].timeMap : {};
-                // Preise strikt in chronologischer Reihenfolge aufbauen
                 const chronoPoints = [];
                 globalAllTimes.forEach(tObj => {
-                    if (timeMap[tObj.key] !== undefined && timeMap[tObj.key] !== null) {
-                        chronoPoints.push({ timeKey: tObj.key, label: tObj.label, fullDate: tObj.fullDate, price: timeMap[tObj.key] });
-                    }
+                    if (timeMap[tObj.key] !== undefined && timeMap[tObj.key] !== null) chronoPoints.push({ timeKey: tObj.key, label: tObj.label, fullDate: tObj.fullDate, price: timeMap[tObj.key] });
                 });
 
                 const valid = chronoPoints.map(p => p.price);
@@ -671,29 +798,19 @@
                 const min = valid.length > 0 ? Math.min(...valid) : null;
                 const max = valid.length > 0 ? Math.max(...valid) : null;
                 const avg = valid.length > 0 ? Math.round(valid.reduce((s, v) => s + v, 0) / valid.length) : null;
-
                 const diffPrev = (current !== null && prev !== null) ? (current - prev) : 0;
-                const diffFromMax = (current !== null && max !== null) ? (current - max) : 0; // negativ = Ersparnis vom Hoch
+                const diffFromMax = (current !== null && max !== null) ? (current - max) : 0;
                 const spread = (min !== null && max !== null) ? (max - min) : 0;
 
                 tags.forEach(t => tagsSet.add(t));
-                const linkInfo = buildHotelUrl({ name, region, rawUrl });
 
                 allHotels.push({
-                    id, name, region, ort, stars, tags,
-                    url: linkInfo.url,
-                    hasDirectLink: linkInfo.hasDirectLink,
-                    currentPrice: current,
-                    prevPrice: prev,
-                    firstPrice: first,
-                    minPrice: min,
-                    maxPrice: max,
-                    avgPrice: avg,
-                    diffPrev,
-                    diffFromMax,
-                    spread,
-                    timeMap,
-                    chronoPoints
+                    id, name, region, ort, stars, tags, rating, recommendation,
+                    url: buildHotelUrl({ name, region, rawUrl }).url,
+                    hasDirectLink: buildHotelUrl({ name, region, rawUrl }).hasDirectLink,
+                    currentPrice: current, prevPrice: prev, firstPrice: first,
+                    minPrice: min, maxPrice: max, avgPrice: avg,
+                    diffPrev, diffFromMax, spread, timeMap, chronoPoints
                 });
             });
 
@@ -713,10 +830,7 @@
                 tagsCloud.appendChild(chip);
             });
 
-            if (!listenersInitialized) {
-                setupEventListeners();
-                listenersInitialized = true;
-            }
+            if (!listenersInitialized) { setupEventListeners(); listenersInitialized = true; }
             render(statusMsg);
         }
 
@@ -729,13 +843,8 @@
             regions.forEach(reg => {
                 const tab = document.createElement('div');
                 tab.className = 'region-tab' + (activeRegion === reg ? ' active' : '');
-                const label = reg === 'ALL' ? '🌍 Alle' : `📍 ${reg}`;
-                tab.innerHTML = `<span>${label}</span><span class="region-count">${counts[reg]}</span>`;
-                tab.addEventListener('click', () => {
-                    activeRegion = reg;
-                    buildRegionTabs();
-                    render();
-                });
+                tab.innerHTML = `<span>${reg === 'ALL' ? '🌍 Alle' : `📍 ${reg}`}</span><span class="region-count">${counts[reg]}</span>`;
+                tab.addEventListener('click', () => { activeRegion = reg; buildRegionTabs(); render(); });
                 container.appendChild(tab);
             });
         }
@@ -760,36 +869,29 @@
             document.getElementById('searchInput').addEventListener('input', () => render());
             document.getElementById('sortSelect').addEventListener('change', () => render());
             document.getElementById('starsSelect').addEventListener('change', () => render());
-
-            const slider = document.getElementById('budgetSlider');
-            slider.addEventListener('input', (e) => {
+            document.getElementById('recSelect').addEventListener('change', () => render());
+            
+            document.getElementById('budgetSlider').addEventListener('input', (e) => {
                 const val = parseInt(e.target.value);
                 document.getElementById('budgetVal').textContent = val >= 3600 ? 'Alle' : `bis ${val} €`;
                 render();
             });
 
-            document.getElementById('quickFavBtn').addEventListener('click', (e) => {
-                onlyFavs = !onlyFavs; e.currentTarget.classList.toggle('fav-active', onlyFavs); render();
-            });
-            document.getElementById('quickWithPriceBtn').addEventListener('click', (e) => {
-                onlyWithPrice = !onlyWithPrice; e.currentTarget.classList.toggle('active', onlyWithPrice); render();
-            });
+            document.getElementById('quickFavBtn').addEventListener('click', (e) => { onlyFavs = !onlyFavs; e.currentTarget.classList.toggle('fav-active', onlyFavs); render(); });
+            document.getElementById('quickWithPriceBtn').addEventListener('click', (e) => { onlyWithPrice = !onlyWithPrice; e.currentTarget.classList.toggle('active', onlyWithPrice); render(); });
             document.getElementById('quick2kBtn').addEventListener('click', (e) => {
                 onlyUnder2k = !onlyUnder2k; e.currentTarget.classList.toggle('active', onlyUnder2k);
                 document.getElementById('budgetSlider').value = onlyUnder2k ? 2000 : 3600;
                 document.getElementById('budgetVal').textContent = onlyUnder2k ? 'bis 2000 €' : 'Alle';
                 render();
             });
-            document.getElementById('quickSwimBtn').addEventListener('click', (e) => {
-                onlySwimUp = !onlySwimUp; e.currentTarget.classList.toggle('active', onlySwimUp); render();
-            });
-            document.getElementById('quickBeachBtn').addEventListener('click', (e) => {
-                onlyBeach = !onlyBeach; e.currentTarget.classList.toggle('active', onlyBeach); render();
-            });
+            document.getElementById('quickSwimBtn').addEventListener('click', (e) => { onlySwimUp = !onlySwimUp; e.currentTarget.classList.toggle('active', onlySwimUp); render(); });
+            document.getElementById('quickBeachBtn').addEventListener('click', (e) => { onlyBeach = !onlyBeach; e.currentTarget.classList.toggle('active', onlyBeach); render(); });
 
             document.getElementById('resetFiltersBtn').addEventListener('click', () => {
                 document.getElementById('searchInput').value = '';
                 document.getElementById('starsSelect').value = '0';
+                document.getElementById('recSelect').value = '0';
                 document.getElementById('budgetSlider').value = 3600;
                 document.getElementById('budgetVal').textContent = 'Alle';
                 activeRegion = 'ALL'; activeTag = null; onlyFavs = false; onlyWithPrice = false; onlyUnder2k = false; onlySwimUp = false; onlyBeach = false;
@@ -816,15 +918,26 @@
             applyChartPreset(chartPreset);
         };
 
+        function getBadgeHTML(h) {
+            if (!h.recommendation && !h.rating) return '';
+            let html = `<div class="hc-badges">`;
+            if (h.recommendation) html += `<div class="hc-rec">👍 ${h.recommendation}%</div>`;
+            if (h.rating) html += `<div class="hc-rat"><span class="hc-sun">☀️</span> ${h.rating.toFixed(1).replace('.', ',')} / 6</div>`;
+            html += `</div>`;
+            return html;
+        }
+
         function render(statusOverride) {
             const search = document.getElementById('searchInput').value.toLowerCase().trim();
             const sortMode = document.getElementById('sortSelect').value;
             const minStars = parseFloat(document.getElementById('starsSelect').value) || 0;
+            const minRec = parseInt(document.getElementById('recSelect').value) || 0;
             const maxBudget = parseInt(document.getElementById('budgetSlider').value);
 
             let filtered = allHotels.filter(h => {
                 if (activeRegion !== 'ALL' && h.region !== activeRegion) return false;
                 if (minStars > 0 && h.stars < minStars) return false;
+                if (minRec > 0 && (h.recommendation === null || h.recommendation < minRec)) return false;
                 if (search && !h.name.toLowerCase().includes(search) && !h.ort.toLowerCase().includes(search) && !h.region.toLowerCase().includes(search) && !h.tags.some(t => t.toLowerCase().includes(search))) return false;
                 if (activeTag && !h.tags.includes(activeTag)) return false;
                 if (onlyFavs && !favorites.includes(h.name)) return false;
@@ -837,11 +950,18 @@
 
             filtered.sort((a, b) => {
                 if (sortMode === 'FAV_FIRST') {
-                    const aFav = favorites.includes(a.name) ? 0 : 1;
-                    const bFav = favorites.includes(b.name) ? 0 : 1;
+                    const aFav = favorites.includes(a.name) ? 0 : 1, bFav = favorites.includes(b.name) ? 0 : 1;
                     if (aFav !== bFav) return aFav - bFav;
                 }
                 if (sortMode === 'NAME_ASC') return a.name.localeCompare(b.name);
+                
+                // Für Bewertungen sortieren (fehlende nach unten)
+                if (sortMode === 'RATING_DESC') {
+                    const rA = a.rating || 0, rB = b.rating || 0;
+                    if (rA !== rB) return rB - rA;
+                    return (b.recommendation || 0) - (a.recommendation || 0);
+                }
+
                 if (a.currentPrice === null && b.currentPrice === null) return a.name.localeCompare(b.name);
                 if (a.currentPrice === null) return 1;
                 if (b.currentPrice === null) return -1;
@@ -854,7 +974,6 @@
                 return 0;
             });
 
-            // KPIs aktualisieren
             const withPriceAll = allHotels.filter(h => h.currentPrice !== null);
             document.getElementById('kpiCount').textContent = `${filtered.length} / ${allHotels.length}`;
             document.getElementById('kpiActiveSub').textContent = `${withPriceAll.length} Hotels mit Preis`;
@@ -906,16 +1025,13 @@
         function renderGrid(filtered) {
             const grid = document.getElementById('hotelGrid');
             grid.innerHTML = '';
-
-            if (filtered.length === 0) {
-                grid.innerHTML = `<div class="empty-state">Keine Hotels für diese Filter gefunden. Klicke auf „Filter zurücksetzen“!</div>`;
-                return;
-            }
+            if (filtered.length === 0) { grid.innerHTML = `<div class="empty-state">Keine Hotels für diese Filter gefunden. Klicke auf „Filter zurücksetzen“!</div>`; return; }
 
             filtered.forEach(h => {
                 const isFav = favorites.includes(h.name);
                 const isPinned = chartPinned.includes(h.name);
                 const safeName = h.name.replace(/'/g, "\\'");
+                
                 let budgetClass = '';
                 if (h.currentPrice !== null) {
                     if (h.currentPrice <= 1850) budgetClass = 'in-budget';
@@ -931,8 +1047,7 @@
                 }
 
                 let allTimeBadge = (h.currentPrice !== null && h.minPrice !== null && h.currentPrice <= h.minPrice)
-                    ? `<span class="alltime-badge">🔥 Bestpreis</span>`
-                    : (h.diffFromMax <= -30 ? `<span class="alltime-badge" style="background:#dcfce7;color:#15803d;">💎 ${h.diffFromMax} € v. Hoch</span>` : '');
+                    ? `<span class="alltime-badge">🔥 Bestpreis</span>` : (h.diffFromMax <= -30 ? `<span class="alltime-badge" style="background:#dcfce7;color:#15803d;">💎 ${h.diffFromMax} € v. Hoch</span>` : '');
 
                 const tagsHTML = h.tags.map(t => {
                     const low = t.toLowerCase();
@@ -940,13 +1055,9 @@
                     return `<span class="tag-badge ${extraClass}">${t}</span>`;
                 }).join('');
 
-                // Position auf der Tief-Hoch-Spanne berechnen (0% = Tief, 100% = Hoch)
                 let rangePos = 50;
-                if (h.currentPrice !== null && h.minPrice !== null && h.maxPrice !== null && h.maxPrice > h.minPrice) {
-                    rangePos = Math.round(((h.currentPrice - h.minPrice) / (h.maxPrice - h.minPrice)) * 100);
-                } else if (h.currentPrice !== null) {
-                    rangePos = 15;
-                }
+                if (h.currentPrice !== null && h.minPrice !== null && h.maxPrice !== null && h.maxPrice > h.minPrice) rangePos = Math.round(((h.currentPrice - h.minPrice) / (h.maxPrice - h.minPrice)) * 100);
+                else if (h.currentPrice !== null) rangePos = 15;
 
                 const linkStatusBadge = !h.hasDirectLink ? `<div class="missing-link-badge">⚠️ Kein Direktlink in Sheets</div>` : '';
                 const btnLabel = h.hasDirectLink ? 'Zum Angebot ↗' : 'Suchen 🔍';
@@ -964,6 +1075,7 @@
                             </div>
                         </div>
                         <div class="location-badge">📍 ${h.region}${h.ort ? ' • ' + h.ort : ''}</div>
+                        ${getBadgeHTML(h)}
                         ${linkStatusBadge}
                         <div class="tags-wrap">${tagsHTML}</div>
                     </div>
@@ -996,7 +1108,6 @@
 
         function renderMatrix(filtered) {
             const table = document.getElementById('matrixTable');
-            // Nur Zeitpunkte zeigen, an denen mindestens 3 Hotels gemessen wurden (blendet Einzel-Probeläufe aus) oder die letzten 8 Läufe
             let matrixTimes = globalAllTimes.filter(t => t.hotelCount >= 3);
             if (matrixTimes.length === 0) matrixTimes = globalAllTimes;
             matrixTimes = matrixTimes.slice(-8);
@@ -1012,25 +1123,17 @@
             let tbody = '<tbody>';
             filtered.forEach(h => {
                 const safeName = h.name.replace(/'/g, "\\'");
-                const isFav = favorites.includes(h.name);
-                const isPinned = chartPinned.includes(h.name);
-
                 let statusBadge = '-';
                 if (h.currentPrice !== null) {
-                    if (h.currentPrice <= h.minPrice) {
-                        statusBadge = `<span class="alltime-badge">🔥 Am Tiefstpreis</span>`;
-                    } else {
-                        const aboveMin = h.currentPrice - h.minPrice;
-                        statusBadge = `<span style="font-size:11px; color:#b45309; font-weight:700;">+${aboveMin} € über Tief</span>`;
-                    }
+                    if (h.currentPrice <= h.minPrice) statusBadge = `<span class="alltime-badge">🔥 Am Tiefstpreis</span>`;
+                    else statusBadge = `<span style="font-size:11px; color:#b45309; font-weight:700;">+${h.currentPrice - h.minPrice} € über Tief</span>`;
                 }
 
                 let prevCellPrice = null;
                 const timeCells = matrixTimes.map(t => {
                     const p = h.timeMap[t.key];
                     if (p === undefined || p === null) return `<td class="heat-cell" style="color:#cbd5e1;">-</td>`;
-                    let cls = 'heat-cell';
-                    let deltaHtml = '';
+                    let cls = 'heat-cell', deltaHtml = '';
                     if (prevCellPrice !== null) {
                         const d = p - prevCellPrice;
                         if (d < 0) { cls += ' heat-down'; deltaHtml = `<span class="heat-delta">↘ ${d} €</span>`; }
@@ -1044,10 +1147,11 @@
 
                 tbody += `<tr onclick="openHotelModal('${safeName}')" style="cursor:pointer;">
                     <td class="matrix-hotel-cell">
-                        <span onclick="toggleFav('${safeName}', event)" style="margin-right:4px;">${isFav ? '❤️' : '🤍'}</span>
-                        <span onclick="toggleChartPin('${safeName}', event)" style="margin-right:6px; opacity:${isPinned ? 1 : 0.45};">📈</span>
+                        <span onclick="toggleFav('${safeName}', event)" style="margin-right:4px;">${favorites.includes(h.name) ? '❤️' : '🤍'}</span>
+                        <span onclick="toggleChartPin('${safeName}', event)" style="margin-right:6px; opacity:${chartPinned.includes(h.name) ? 1 : 0.45};">📈</span>
                         ${h.name} <span class="stars">${'★'.repeat(Math.floor(h.stars))}</span>
                         <span class="matrix-sub">📍 ${h.region}${h.ort ? ' • ' + h.ort : ''}</span>
+                        ${getBadgeHTML(h)}
                     </td>
                     <td style="text-align:right; font-weight:900; font-size:14px; color:var(--primary);">${h.currentPrice !== null ? h.currentPrice + ' €' : '-'}</td>
                     <td style="text-align:right; font-size:11px; color:var(--muted); white-space:nowrap;"><b>${h.minPrice || '-'} €</b> / ${h.maxPrice || '-'} €</td>
@@ -1063,89 +1167,62 @@
             const container = document.getElementById('compareContent');
             let compHotels = allHotels.filter(h => chartPinned.includes(h.name));
             let sourceHint = 'deine mit 📈 angehefteten Hotels';
-            if (compHotels.length === 0 && favorites.length > 0) {
-                compHotels = allHotels.filter(h => favorites.includes(h.name));
-                sourceHint = 'deine ❤️ Favoriten';
-            }
-            if (compHotels.length === 0) {
-                compHotels = filtered.filter(h => h.currentPrice !== null).slice(0, 4);
-                sourceHint = 'die Top 4 günstigsten Hotels (Klicke bei beliebigen Karten auf 📈 oder ❤️ für eigene Auswahl)';
-            }
+            if (compHotels.length === 0 && favorites.length > 0) { compHotels = allHotels.filter(h => favorites.includes(h.name)); sourceHint = 'deine ❤️ Favoriten'; }
+            if (compHotels.length === 0) { compHotels = filtered.filter(h => h.currentPrice !== null).slice(0, 4); sourceHint = 'die Top 4 günstigsten Hotels'; }
 
-            if (compHotels.length === 0) {
-                container.innerHTML = `<div class="empty-state">Keine Hotels zum Vergleichen ausgewählt.</div>`;
-                return;
-            }
+            if (compHotels.length === 0) { container.innerHTML = `<div class="empty-state">Keine Hotels zum Vergleichen ausgewählt.</div>`; return; }
 
             let html = `<div style="margin-bottom:10px; font-size:12px; font-weight:700; color:var(--muted);">Zeigt im Direkt-Vergleich: <b>${sourceHint}</b></div>`;
             html += `<table class="compare-table"><tbody>`;
+            
             html += `<tr><th>Hotel</th>${compHotels.map(h => {
-                const safeName = h.name.replace(/'/g, "\\'");
                 return `<td style="font-weight:900; font-size:15px;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px;">
-                        <span style="cursor:pointer; color:var(--primary);" onclick="openHotelModal('${safeName}')">${h.name}</span>
-                        <button class="icon-btn" onclick="toggleChartPin('${safeName}', event)" title="Aus Vergleich entfernen">✕</button>
+                        <span style="cursor:pointer; color:var(--primary);" onclick="openHotelModal('${h.name.replace(/'/g, "\\'")}')">${h.name}</span>
+                        <button class="icon-btn" onclick="toggleChartPin('${h.name.replace(/'/g, "\\'")}', event)" title="Entfernen">✕</button>
                     </div>
                     <div style="color:#f59e0b; font-size:12px; margin-top:2px;">${'★'.repeat(Math.floor(h.stars))}</div>
                 </td>`;
             }).join('')}</tr>`;
 
             html += `<tr><th>Aktueller Preis</th>${compHotels.map(h => `<td style="font-size:20px; font-weight:900; color:${h.currentPrice <= 2000 ? 'var(--green)' : 'var(--primary)'};">${h.currentPrice ? h.currentPrice + ' €' : '-'}</td>`).join('')}</tr>`;
+            html += `<tr><th>Bewertung (HC)</th>${compHotels.map(h => `<td>${getBadgeHTML(h) || '-'}</td>`).join('')}</tr>`;
+            
             html += `<tr><th>Trend / Letzter Check</th>${compHotels.map(h => {
                 if (h.diffPrev < 0) return `<td style="color:var(--green); font-weight:800;">↘ ${h.diffPrev} € günstiger</td>`;
                 if (h.diffPrev > 0) return `<td style="color:var(--red); font-weight:800;">↗ +${h.diffPrev} € teurer</td>`;
                 return `<td style="color:var(--muted); font-weight:700;">→ ±0 € unverändert</td>`;
             }).join('')}</tr>`;
+            
             html += `<tr><th>Historisches Tief / Hoch</th>${compHotels.map(h => `<td>Tief: <b style="color:var(--green);">${h.minPrice || '-'} €</b><br>Hoch: <b style="color:var(--red);">${h.maxPrice || '-'} €</b><br><span style="font-size:11px; color:var(--muted);">Ø Durchschnitt: ${h.avgPrice || '-'} €</span></td>`).join('')}</tr>`;
+            
             html += `<tr><th>Abstand zum Bestpreis</th>${compHotels.map(h => {
                 if (!h.currentPrice || !h.minPrice) return `<td>-</td>`;
                 const diff = h.currentPrice - h.minPrice;
                 return diff === 0 ? `<td style="background:#ecfdf5; color:#047857; font-weight:800;">🔥 Aktuell am Bestpreis!</td>` : `<td style="font-weight:700; color:#b45309;">+${diff} € über Tiefstpreis</td>`;
             }).join('')}</tr>`;
+            
             html += `<tr><th>Region & Ort</th>${compHotels.map(h => `<td><b>${h.region}</b><br><span style="font-size:12px; color:var(--muted);">${h.ort || '-'}</span></td>`).join('')}</tr>`;
-            html += `<tr><th>Highlights & Merkmale</th>${compHotels.map(h => `<td><div class="tags-wrap">${h.tags.map(t => `<span class="tag-badge">${t}</span>`).join('')}</div></td>`).join('')}</tr>`;
-            html += `<tr><th>Aktion</th>${compHotels.map(h => {
-                const safeName = h.name.replace(/'/g, "\\'");
-                return `<td>
-                    <div style="display:flex; gap:6px;">
-                        <button class="btn-detail" onclick="openHotelModal('${safeName}')">📊 Detail-Kurve</button>
-                        <a href="${h.url}" target="_blank" class="offer-btn" style="padding:8px 10px;">Zum Angebot ↗</a>
-                    </div>
-                </td>`;
-            }).join('')}</tr>`;
-
+            html += `<tr><th>Highlights</th>${compHotels.map(h => `<td><div class="tags-wrap">${h.tags.map(t => `<span class="tag-badge">${t}</span>`).join('')}</div></td>`).join('')}</tr>`;
+            html += `<tr><th>Aktion</th>${compHotels.map(h => `<td><div style="display:flex; gap:6px;"><button class="btn-detail" onclick="openHotelModal('${h.name.replace(/'/g, "\\'")}')">📊 Detail-Kurve</button><a href="${h.url}" target="_blank" class="offer-btn" style="padding:8px 10px;">Zum Angebot ↗</a></div></td>`).join('')}</tr>`;
+            
             html += `</tbody></table>`;
             container.innerHTML = html;
         }
 
         function updateChart(filteredHotels) {
             const withPrice = filteredHotels.filter(h => h.currentPrice !== null);
-            let chartHotels = [];
-            let subtitle = '';
+            let chartHotels = [], subtitle = '';
 
-            if (chartPreset === 'PINNED' && chartPinned.length > 0) {
-                chartHotels = allHotels.filter(h => chartPinned.includes(h.name));
-                subtitle = `Vergleicht deine ${chartHotels.length} mit 📈 angehefteten Hotels`;
-            } else if (chartPreset === 'FAVS' && favorites.length > 0) {
-                chartHotels = allHotels.filter(h => favorites.includes(h.name) && h.currentPrice !== null);
-                subtitle = `Vergleicht deine ${chartHotels.length} gespeicherten ❤️ Favoriten`;
-            } else if (chartPreset === 'DROPS') {
-                chartHotels = [...withPrice].sort((a, b) => a.diffPrev - b.diffPrev).slice(0, 5);
-                subtitle = `Top 5 Hotels mit der stärksten Preissenkung zum letzten Check`;
-            } else if (chartPreset === 'DEALS') {
-                chartHotels = [...withPrice].sort((a, b) => a.diffFromMax - b.diffFromMax).slice(0, 5);
-                subtitle = `Top 5 Hotels mit dem größten Preisabschlag gegenüber ihrem bisherigen Höchstpreis`;
-            } else if (chartPreset === 'VOLATILE') {
-                chartHotels = [...withPrice].sort((a, b) => b.spread - a.spread).slice(0, 5);
-                subtitle = `Top 5 Hotels mit der größten Preisbewegung (Differenz zwischen Tief und Hoch)`;
-            } else {
-                chartHotels = [...withPrice].sort((a, b) => a.currentPrice - b.currentPrice).slice(0, 5);
-                subtitle = `Top 5 günstigste Hotels der aktuellen Filterauswahl`;
-            }
+            if (chartPreset === 'PINNED' && chartPinned.length > 0) { chartHotels = allHotels.filter(h => chartPinned.includes(h.name)); subtitle = `Vergleicht deine ${chartHotels.length} mit 📈 angehefteten Hotels`; }
+            else if (chartPreset === 'FAVS' && favorites.length > 0) { chartHotels = allHotels.filter(h => favorites.includes(h.name) && h.currentPrice !== null); subtitle = `Vergleicht deine ${chartHotels.length} gespeicherten ❤️ Favoriten`; }
+            else if (chartPreset === 'DROPS') { chartHotels = [...withPrice].sort((a, b) => a.diffPrev - b.diffPrev).slice(0, 5); subtitle = `Top 5 Hotels mit der stärksten Preissenkung zum letzten Check`; }
+            else if (chartPreset === 'DEALS') { chartHotels = [...withPrice].sort((a, b) => a.diffFromMax - b.diffFromMax).slice(0, 5); subtitle = `Top 5 Hotels mit dem größten Preisabschlag gegenüber ihrem Höchstpreis`; }
+            else if (chartPreset === 'VOLATILE') { chartHotels = [...withPrice].sort((a, b) => b.spread - a.spread).slice(0, 5); subtitle = `Top 5 Hotels mit der größten Preisbewegung (Tief bis Hoch)`; }
+            else { chartHotels = [...withPrice].sort((a, b) => a.currentPrice - b.currentPrice).slice(0, 5); subtitle = `Top 5 günstigste Hotels der aktuellen Filterauswahl`; }
 
             document.getElementById('chartSubtitle').textContent = subtitle;
 
-            // Nur Zeitpunkte auf der X-Achse anzeigen, an denen mindestens eines der gewählten Chart-Hotels einen echten Messwert hat
             let activeTimes = globalAllTimes.filter(t => chartHotels.some(h => h.timeMap[t.key] !== undefined && h.timeMap[t.key] !== null));
             if (activeTimes.length === 0) activeTimes = globalAllTimes;
 
@@ -1154,28 +1231,14 @@
 
             const datasets = chartHotels.map((h, i) => {
                 const basePrice = h.firstPrice || h.currentPrice || 1;
-                const rawSeries = activeTimes.length > 0
-                    ? activeTimes.map(t => (h.timeMap[t.key] !== undefined ? h.timeMap[t.key] : null))
-                    : [h.currentPrice];
-
+                const rawSeries = activeTimes.length > 0 ? activeTimes.map(t => (h.timeMap[t.key] !== undefined ? h.timeMap[t.key] : null)) : [h.currentPrice];
                 const transformedData = rawSeries.map(val => {
                     if (val === null) return null;
                     if (chartValueMode === 'DIFF') return val - basePrice;
                     if (chartValueMode === 'PCT') return Number((((val - basePrice) / basePrice) * 100).toFixed(2));
                     return val;
                 });
-
-                return {
-                    label: h.name,
-                    data: transformedData,
-                    borderColor: colors[i % colors.length],
-                    backgroundColor: colors[i % colors.length],
-                    borderWidth: 2.5,
-                    pointRadius: 4,
-                    pointHoverRadius: 6,
-                    tension: 0.2,
-                    spanGaps: true
-                };
+                return { label: h.name, data: transformedData, borderColor: colors[i % colors.length], backgroundColor: colors[i % colors.length], borderWidth: 2.5, pointRadius: 4, pointHoverRadius: 6, tension: 0.2, spanGaps: true };
             });
 
             const ctx = document.getElementById('comparisonChart').getContext('2d');
@@ -1184,41 +1247,27 @@
                 type: 'line',
                 data: { labels, datasets },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: {
-                        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11, weight: 'bold' } } },
-                        tooltip: {
-                            callbacks: {
-                                label: ctx => {
-                                    const v = ctx.parsed.y;
-                                    if (v === null || v === undefined) return `${ctx.dataset.label}: keine Messung`;
-                                    if (chartValueMode === 'DIFF') return `${ctx.dataset.label}: ${v > 0 ? '+' : ''}${v} € seit Start`;
-                                    if (chartValueMode === 'PCT') return `${ctx.dataset.label}: ${v > 0 ? '+' : ''}${v} % seit Start`;
-                                    return `${ctx.dataset.label}: ${v} €`;
-                                }
-                            }
-                        }
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11, weight: 'bold' } } },
+                        tooltip: { callbacks: { label: ctx => {
+                            const v = ctx.parsed.y;
+                            if (v === null || v === undefined) return `${ctx.dataset.label}: keine Messung`;
+                            if (chartValueMode === 'DIFF') return `${ctx.dataset.label}: ${v > 0 ? '+' : ''}${v} € seit Start`;
+                            if (chartValueMode === 'PCT') return `${ctx.dataset.label}: ${v > 0 ? '+' : ''}${v} % seit Start`;
+                            return `${ctx.dataset.label}: ${v} €`;
+                        } } }
                     },
                     scales: {
-                        y: {
-                            ticks: {
-                                callback: v => {
-                                    if (chartValueMode === 'DIFF') return (v > 0 ? '+' : '') + v + ' €';
-                                    if (chartValueMode === 'PCT') return (v > 0 ? '+' : '') + v + ' %';
-                                    return v + ' €';
-                                }
-                            },
-                            grid: { color: '#f1f5f9' }
-                        },
-                        x: { grid: { display: false } }
+                        y: { ticks: { callback: v => {
+                            if (chartValueMode === 'DIFF') return (v > 0 ? '+' : '') + v + ' €';
+                            if (chartValueMode === 'PCT') return (v > 0 ? '+' : '') + v + ' %';
+                            return v + ' €';
+                        } }, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } }
                     }
                 }
             });
         }
 
-        // Detail-Modal Logik
         window.openHotelModal = function(hotelName) {
             const h = allHotels.find(x => x.name === hotelName);
             if (!h) return;
@@ -1226,6 +1275,7 @@
 
             document.getElementById('modalTitle').innerHTML = `${h.name} <span class="stars">${'★'.repeat(Math.floor(h.stars))}</span>`;
             document.getElementById('modalMeta').textContent = `📍 ${h.region}${h.ort ? ' • ' + h.ort : ''} • ${h.chronoPoints.length} Messpunkte gespeichert`;
+            document.getElementById('modalHCBadge').innerHTML = getBadgeHTML(h);
             document.getElementById('modalOfferBtn').href = h.url;
             document.getElementById('modalTags').innerHTML = h.tags.map(t => `<span class="tag-badge">${t}</span>`).join('');
 
@@ -1246,16 +1296,14 @@
                     <div class="modal-kpi-val" style="color:var(--red);">${h.maxPrice ? h.maxPrice + ' €' : '-'}</div>
                 </div>
                 <div class="modal-kpi">
-                    <div class="modal-kpi-label">Ø Durchschnittspreis</div>
+                    <div class="modal-kpi-label">Ø Durchschnitt</div>
                     <div class="modal-kpi-val">${h.avgPrice ? h.avgPrice + ' €' : '-'} <span style="font-size:11px; font-weight:700; color:${diffAvg <= 0 ? 'var(--green)' : 'var(--orange)'};">(${avgText})</span></div>
                 </div>
             `;
 
-            // Vergleichs-Dropdown befüllen
             const sel = document.getElementById('modalCompareSelect');
             sel.innerHTML = `<option value="">-- Kein 2. Hotel (Nur Durchschnittslinie) --</option>`;
-            allHotels.filter(x => x.name !== h.name && x.currentPrice !== null)
-                .sort((a, b) => a.currentPrice - b.currentPrice)
+            allHotels.filter(x => x.name !== h.name && x.currentPrice !== null).sort((a, b) => a.currentPrice - b.currentPrice)
                 .forEach(x => {
                     const opt = document.createElement('option');
                     opt.value = x.name;
@@ -1263,13 +1311,10 @@
                     sel.appendChild(opt);
                 });
 
-            // Historien-Tabelle aufbauen (neueste Messung oben)
             const histTable = document.getElementById('modalHistoryTable');
             let rowsHtml = `<thead><tr><th>Messzeitpunkt</th><th>Preis</th><th>Veränderung</th><th>Abstand zum Tiefstpreis</th></tr></thead><tbody>`;
-            const pts = h.chronoPoints;
-            for (let i = pts.length - 1; i >= 0; i--) {
-                const cur = pts[i];
-                const prv = i > 0 ? pts[i - 1] : null;
+            for (let i = h.chronoPoints.length - 1; i >= 0; i--) {
+                const cur = h.chronoPoints[i], prv = i > 0 ? h.chronoPoints[i - 1] : null;
                 let deltaStr = '<span style="color:var(--muted);">Erste Messung</span>';
                 if (prv) {
                     const d = cur.price - prv.price;
@@ -1277,14 +1322,8 @@
                     else if (d > 0) deltaStr = `<span style="color:var(--red); font-weight:800;">↗ +${d} €</span>`;
                     else deltaStr = `<span style="color:var(--muted);">→ ±0 €</span>`;
                 }
-                const distMin = cur.price - h.minPrice;
-                const minBadge = distMin === 0 ? `<span class="alltime-badge">🔥 Bestpreis</span>` : `+${distMin} €`;
-                rowsHtml += `<tr>
-                    <td>${cur.fullDate}</td>
-                    <td style="font-weight:900; color:var(--primary);">${cur.price} €</td>
-                    <td>${deltaStr}</td>
-                    <td>${minBadge}</td>
-                </tr>`;
+                const minBadge = (cur.price - h.minPrice) === 0 ? `<span class="alltime-badge">🔥 Bestpreis</span>` : `+${cur.price - h.minPrice} €`;
+                rowsHtml += `<tr><td>${cur.fullDate}</td><td style="font-weight:900; color:var(--primary);">${cur.price} €</td><td>${deltaStr}</td><td>${minBadge}</td></tr>`;
             }
             rowsHtml += `</tbody>`;
             histTable.innerHTML = rowsHtml;
@@ -1294,75 +1333,22 @@
         };
 
         window.renderModalChart = function() {
-            const h = currentModalHotel;
+            const h = currentModalHotel, h2 = document.getElementById('modalCompareSelect').value ? allHotels.find(x => x.name === document.getElementById('modalCompareSelect').value) : null;
             if (!h) return;
-            const secondName = document.getElementById('modalCompareSelect').value;
-            const h2 = secondName ? allHotels.find(x => x.name === secondName) : null;
 
-            const activeTimes = globalAllTimes.filter(t =>
-                (h.timeMap[t.key] !== undefined && h.timeMap[t.key] !== null) ||
-                (h2 && h2.timeMap[t.key] !== undefined && h2.timeMap[t.key] !== null)
-            );
-
+            const activeTimes = globalAllTimes.filter(t => (h.timeMap[t.key] !== undefined && h.timeMap[t.key] !== null) || (h2 && h2.timeMap[t.key] !== undefined && h2.timeMap[t.key] !== null));
             const labels = activeTimes.map(t => t.label);
-            const datasets = [
-                {
-                    label: h.name,
-                    data: activeTimes.map(t => h.timeMap[t.key] ?? null),
-                    borderColor: '#1d4ed8',
-                    backgroundColor: 'rgba(29, 78, 216, 0.08)',
-                    borderWidth: 3,
-                    pointRadius: 5,
-                    fill: !h2,
-                    tension: 0.2,
-                    spanGaps: true
-                }
-            ];
+            const datasets = [{ label: h.name, data: activeTimes.map(t => h.timeMap[t.key] ?? null), borderColor: '#1d4ed8', backgroundColor: 'rgba(29, 78, 216, 0.08)', borderWidth: 3, pointRadius: 5, fill: !h2, tension: 0.2, spanGaps: true }];
 
-            if (h2) {
-                datasets.push({
-                    label: h2.name,
-                    data: activeTimes.map(t => h2.timeMap[t.key] ?? null),
-                    borderColor: '#059669',
-                    backgroundColor: '#059669',
-                    borderWidth: 2.5,
-                    pointRadius: 4,
-                    tension: 0.2,
-                    spanGaps: true
-                });
-            } else if (h.avgPrice) {
-                datasets.push({
-                    label: `Ø Durchschnitt (${h.avgPrice} €)`,
-                    data: activeTimes.map(() => h.avgPrice),
-                    borderColor: '#94a3b8',
-                    borderDash: [6, 6],
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    fill: false
-                });
-            }
+            if (h2) datasets.push({ label: h2.name, data: activeTimes.map(t => h2.timeMap[t.key] ?? null), borderColor: '#059669', backgroundColor: '#059669', borderWidth: 2.5, pointRadius: 4, tension: 0.2, spanGaps: true });
+            else if (h.avgPrice) datasets.push({ label: `Ø Durchschnitt (${h.avgPrice} €)`, data: activeTimes.map(() => h.avgPrice), borderColor: '#94a3b8', borderDash: [6, 6], borderWidth: 1.5, pointRadius: 0, fill: false });
 
             const ctx = document.getElementById('modalSingleChart').getContext('2d');
             if (modalChartInstance) modalChartInstance.destroy();
-            modalChartInstance = new Chart(ctx, {
-                type: 'line',
-                data: { labels, datasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: { legend: { position: 'top' } },
-                    scales: {
-                        y: { ticks: { callback: v => v + ' €' }, grid: { color: '#f1f5f9' } },
-                        x: { grid: { display: false } }
-                    }
-                }
-            });
+            modalChartInstance = new Chart(ctx, { type: 'line', data: { labels, datasets }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'top' } }, scales: { y: { ticks: { callback: v => v + ' €' }, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } } } });
         };
 
-        window.closeHotelModal = function() {
-            document.getElementById('detailModal').classList.remove('is-open');
-        };
+        window.closeHotelModal = function() { document.getElementById('detailModal').classList.remove('is-open'); };
 
         init();
     </script>
