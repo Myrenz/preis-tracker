@@ -569,12 +569,11 @@
             const seenHotelTimeCount = {};
             const timeRegistry = {};
 
-            // 1. History-Daten einlesen und nach neuen Bewertungen in Spalte "Details" (Index 3) suchen
             historyRows.forEach(row => {
                 const rawTime = (row[0] || '').trim();
                 const hName = (row[1] || '').trim();
                 const rawPrice = String(row[2] || '').replace(/[^\d.,-]/g, '').replace(',', '.').trim();
-                const detailsStr = (row[3] || '').trim(); // Hier speichert der neue Tracker die Bewertungen
+                const detailsStr = (row[3] || '').trim(); 
 
                 if (!rawTime || !hName || rawTime.toLowerCase().includes('zeitstempel')) return;
 
@@ -593,21 +592,21 @@
                 }
                 timeRegistry[timeKey].hotelCount++;
 
-                if (!historyByHotel[hName]) historyByHotel[hName] = { timeMap: {}, latestRating: null, latestRec: null };
+                if (!historyByHotel[hName]) historyByHotel[hName] = { timeMap: {}, latestRating: null, latestRec: null, latestCount: null };
                 historyByHotel[hName].timeMap[timeKey] = pVal;
                 
-                // NEU: Bewertungen per Regex auslesen (Beispiel-Details: "feld=totalPrice;n=2|rating=5.7|rec=95")
                 const rMatch = detailsStr.match(/rating=([\d.,]+)/);
                 const cMatch = detailsStr.match(/rec=(\d+)/);
+                const cntMatch = detailsStr.match(/count=(\d+)/);
                 if (rMatch) historyByHotel[hName].latestRating = parseFloat(rMatch[1].replace(',', '.'));
                 if (cMatch) historyByHotel[hName].latestRec = parseInt(cMatch[1]);
+                if (cntMatch) historyByHotel[hName].latestCount = parseInt(cntMatch[1]);
             });
 
             globalAllTimes = Object.values(timeRegistry).sort((a, b) => a.sortMs - b.sortMs);
             const tagsSet = new Set();
             allHotels = [];
 
-            // 2. Hotels einlesen und Fallback-Bewertungen zusammenführen
             hotelRows.forEach(row => {
                 const id = (row[0] || '').trim();
                 const name = (row[1] || '').trim();
@@ -620,7 +619,6 @@
                 const tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [];
                 const rawUrl = (row[7] || '').trim();
                 
-                // Manuelle Fallback-Werte aus der Hotel-Tabelle
                 const staticRatingStr = (row[8] || '').toString().replace(',', '.').trim();
                 const staticRating = parseFloat(staticRatingStr) || null;
                 const staticRecStr = (row[9] || '').toString().replace('%', '').trim();
@@ -629,9 +627,9 @@
                 const histData = historyByHotel[name] || {};
                 const timeMap = histData.timeMap || {};
                 
-                // Automatisch gescrapte Werte haben Vorrang vor manuellen Werten
                 const rating = (histData.latestRating !== null && histData.latestRating !== undefined) ? histData.latestRating : staticRating;
                 const recommendation = (histData.latestRec !== null && histData.latestRec !== undefined) ? histData.latestRec : staticRec;
+                const reviewCount = (histData.latestCount !== null && histData.latestCount !== undefined) ? histData.latestCount : null;
 
                 const chronoPoints = [];
                 globalAllTimes.forEach(tObj => {
@@ -652,7 +650,7 @@
                 tags.forEach(t => tagsSet.add(t));
 
                 allHotels.push({
-                    id, name, region, ort, stars, tags, rating, recommendation,
+                    id, name, region, ort, stars, tags, rating, recommendation, reviewCount,
                     url: buildHotelUrl({ name, region, rawUrl }).url,
                     hasDirectLink: buildHotelUrl({ name, region, rawUrl }).hasDirectLink,
                     currentPrice: current, prevPrice: prev, firstPrice: first,
@@ -770,6 +768,7 @@
             let html = `<div class="hc-badges">`;
             if (h.recommendation) html += `<div class="hc-rec">👍 ${h.recommendation}%</div>`;
             if (h.rating) html += `<div class="hc-rat"><span class="hc-sun">☀️</span> ${h.rating.toFixed(1).replace('.', ',')} / 6</div>`;
+            if (h.reviewCount) html += `<div class="hc-cnt" style="background:#f8fafc; color:#64748b; font-weight:700; font-size:11px; padding:3px 7px; border-left:1px solid var(--border); white-space:nowrap;">(${h.reviewCount.toLocaleString('de-DE')})</div>`;
             html += `</div>`;
             return html;
         }
