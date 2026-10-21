@@ -1,0 +1,33 @@
+name: Einmalig Bilder abrufen
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  fetch-images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests playwright
+          playwright install --with-deps chromium
+
+      - name: Skript ausfuehren
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+        run: python get_images.py
+
+      - name: Ergebnis als Download bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotel-bilder-csv
+          path: hotel_bilder.csv
