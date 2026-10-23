@@ -123,6 +123,8 @@
         .card.near-budget { border-bottom: 5px solid var(--orange); }
         .card.over-budget { border-bottom: 5px solid var(--red); }
         .card.sold-out { opacity: 0.65; filter: grayscale(40%); }
+        /* Performance: Karten außerhalb des Bildschirms werden nicht gerendert */
+        .card { content-visibility: auto; contain-intrinsic-size: auto 430px; }
 
         .hotel-card-header {
             background-size: cover;
@@ -147,6 +149,8 @@
         }
 
         .hotel-card-header > * { position: relative; z-index: 2; }
+        /* Hotelbild als lazy <img> statt CSS-Hintergrund */
+        .hotel-card-header > img.hc-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
         
         .card-title { font-size: 16px; font-weight: 800; color: white; line-height: 1.3; cursor: pointer; margin-bottom: 4px; }
         .card-title:hover { color: #93c5fd; }
@@ -454,7 +458,7 @@
         const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyL8no7Spl4eJMQiZk-hrFBbBhdIitHQF6T7vcCXq7h2tPrsCLyICTYNl4kr0xviLfGtg/exec";
 
         let allHotels = [];
-        let favorites = []; // Wird jetzt aus der Cloud geladen
+        let favorites = []; // Hotelnamen; wird aus dem Reiter user_state (Join über Hotel-ID) geladen
         let chartPinned = JSON.parse(localStorage.getItem('chartPinned_2027') || '[]');
         let activeRegion = 'ALL';
         let activeTag = null;
@@ -470,13 +474,36 @@
         let chartPreset = chartPinned.length > 0 ? 'PINNED' : 'TOP5';
         let chartValueMode = 'ABS'; 
         let chartInstance = null;
+        let lastChartSig = '';
         let modalChartInstance = null;
         let currentModalHotel = null;
         let globalAllTimes = [];
         let listenersInitialized = false;
 
+        // ---------------------------------------------------------------- Helfer
+        function hotelByName(name) { return allHotels.find(h => h.name === name); }
+
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function debounce(fn, ms = 150) {
+            let t;
+            return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+        }
+        const renderDebounced = debounce(() => render());
+
+        // Sendet Hotel-ID (stabil) und Name (Fallback) an den Webhook
+        function callWebhook(hotelName, params) {
+            const h = hotelByName(hotelName);
+            const qs = new URLSearchParams({ action: 'update_hotel', ...(h ? { id: h.id } : {}), hotelName, ...params });
+            return fetch(`${WEBHOOK_URL}?${qs}`, { mode: 'no-cors' }).catch(() => {});
+        }
+
         window.openOffer = function(hotelName, url) {
-            fetch(`${WEBHOOK_URL}?action=update_hotel&hotelName=${encodeURIComponent(hotelName)}&type=view`, { mode: 'no-cors' }).catch(() => {});
+            const h = hotelByName(hotelName);
+            if (h) h.views = (h.views || 0) + 1;
+            callWebhook(hotelName, { type: 'view' });
             window.open(url, '_blank');
         };
 
@@ -484,7 +511,9 @@
             const container = btnElement.parentElement;
             container.querySelectorAll('button').forEach(b => b.style.opacity = '0.4');
             btnElement.style.opacity = '1';
-            fetch(`${WEBHOOK_URL}?action=update_hotel&hotelName=${encodeURIComponent(hotelName)}&type=rating&value=${encodeURIComponent(thumb)}`, { mode: 'no-cors' }).catch(() => {});
+            const h = hotelByName(hotelName);
+            if (h) h.dbRating = thumb; // lokal merken, sonst springt die Anzeige beim nächsten Rendern zurück
+            callWebhook(hotelName, { type: 'rating', value: thumb });
         };
 
         function parseTimeMeta(rawStr, occIndex) {
@@ -604,7 +633,8 @@
                             else rowVals.push(String(c.v).trim());
                         }
                         if (rowVals.some(x => x !== '')) {
-                            if(sheetName === 'hotels') {
+                            // Reiter mit Spaltenköpfen (hotels, user_state) als Objekte, preishistorie als Arrays
+                            if (sheetName === 'hotels' || sheetName === 'user_state') {
                                 let rowObj = {};
                                 headers.forEach((h, idx) => rowObj[h] = rowVals[idx]);
                                 rows.push(rowObj);
@@ -626,7 +656,7 @@
             return { url: `https://www.holidaycheck.de/s/${encodeURIComponent(hotel.name + " " + hotel.region)}`, hasDirectLink: false };
         }
 
-        function processDataAndRender(hotelObjects, historyRows, statusMsg) {
+        function processDataAndRender(hotelObjects, historyRows, userRows, statusMsg) {
             const historyByHotel = {};
             const seenHotelTimeCount = {};
             const timeRegistry = {};
@@ -675,6 +705,20 @@
                 document.getElementById('lastScanTime').textContent = "Bisher kein Scan durchgelaufen";
             }
 
+            // Nutzerdaten aus dem Reiter user_state (id | name | views | rating | favorite), Join später über die Hotel-ID
+            const userById = {};
+            userRows.forEach(u => {
+                const uid = String(u['id'] || '').trim();
+                if (!uid || uid.toLowerCase() === 'id') return;
+                const favRaw = String(u['favorite'] ?? '').trim().toUpperCase();
+                const ratingRaw = String(u['rating'] || '').trim();
+                userById[uid] = {
+                    views: parseInt(u['views'], 10) || 0,
+                    rating: (ratingRaw === '👍' || ratingRaw === '👎') ? ratingRaw : '', // nur erlaubte Werte (XSS-Schutz)
+                    favorite: favRaw === 'TRUE' || favRaw === '1'
+                };
+            });
+
             const tagsSet = new Set();
             allHotels = [];
             favorites = []; // Reset für Cloud-Daten
@@ -683,6 +727,10 @@
                 const id = (rowObj['id'] || '').trim();
                 const name = (rowObj['name'] || '').trim();
                 if (!id || !name || id.toLowerCase() === 'id') return;
+
+                // Gleiche Regel wie im Scraper: nur aktive Hotels (leere Zelle = inaktiv)
+                const activeRaw = String(rowObj['active'] ?? 'true').trim().toLowerCase();
+                if (!['true', '1', 'ja', 'yes', 'wahr'].includes(activeRaw)) return;
 
                 const region = (rowObj['region'] || '').trim() || 'Sonstige';
                 const ort = (rowObj['ort'] || '').trim();
@@ -694,12 +742,12 @@
                 const rawUrl = (rowObj['url'] || '').trim();
                 
                 const image = (rowObj['image'] || '').trim();
-                const views = parseInt(rowObj['views']) || 0;
-                const dbRating = (rowObj['rating'] || '').trim();
-                
-                // Check Cloud Favorite
-                const isFav = rowObj['favorite'] === 'TRUE' || rowObj['favorite'] === '1' || rowObj['favorite'] === true;
-                if(isFav) favorites.push(name);
+
+                // Views, Bewertung und Favorit kommen aus user_state (Join über die Hotel-ID)
+                const user = userById[id] || { views: 0, rating: '', favorite: false };
+                const views = user.views;
+                const dbRating = user.rating;
+                if (user.favorite) favorites.push(name);
                 
                 const staticRatingStr = (rowObj['hc_rating'] || '').toString().replace(',', '.').trim();
                 const staticRating = parseFloat(staticRatingStr) || null;
@@ -774,7 +822,7 @@
             regions.forEach(reg => {
                 const tab = document.createElement('div');
                 tab.className = 'region-tab' + (activeRegion === reg ? ' active' : '');
-                tab.innerHTML = `<span>${reg === 'ALL' ? '🌍 Alle' : `📍 ${reg}`}</span><span class="region-count">${counts[reg]}</span>`;
+                tab.innerHTML = `<span>${reg === 'ALL' ? '🌍 Alle' : `📍 ${esc(reg)}`}</span><span class="region-count">${counts[reg]}</span>`;
                 tab.addEventListener('click', () => { activeRegion = reg; buildRegionTabs(); render(); });
                 container.appendChild(tab);
             });
@@ -782,13 +830,19 @@
 
         async function init() {
             try {
-                const [liveHotels, liveHistory] = await Promise.all([
+                let historyFailed = false, userFailed = false;
+                const [liveHotels, liveHistory, liveUsers] = await Promise.all([
                     fetchSheetViaJSONP(SPREADSHEET_ID, 'hotels'),
-                    fetchSheetViaJSONP(SPREADSHEET_ID, 'preishistorie').catch(() => [])
+                    fetchSheetViaJSONP(SPREADSHEET_ID, 'preishistorie').catch(() => { historyFailed = true; return []; }),
+                    fetchSheetViaJSONP(SPREADSHEET_ID, 'user_state').catch(() => { userFailed = true; return []; })
                 ]);
                 if (liveHotels && liveHotels.length > 0) {
-                    processDataAndRender(liveHotels, liveHistory, "🟢 Live verbunden");
-                    document.getElementById('syncStatus').style.background = "rgba(5, 150, 105, 0.35)";
+                    const problems = [];
+                    if (historyFailed) problems.push('Preishistorie');
+                    if (userFailed) problems.push('Favoriten/Bewertungen');
+                    const statusMsg = problems.length > 0 ? `🟠 ${problems.join(' + ')} nicht geladen – bitte neu laden` : "🟢 Live verbunden";
+                    processDataAndRender(liveHotels, liveHistory, liveUsers, statusMsg);
+                    document.getElementById('syncStatus').style.background = problems.length > 0 ? "rgba(217, 119, 6, 0.45)" : "rgba(5, 150, 105, 0.35)";
                 }
             } catch (e) {
                 document.getElementById('syncStatus').textContent = "⚠️ Ladefehler";
@@ -797,7 +851,7 @@
         }
 
         function setupEventListeners() {
-            document.getElementById('searchInput').addEventListener('input', () => render());
+            document.getElementById('searchInput').addEventListener('input', renderDebounced);
             document.getElementById('sortSelect').addEventListener('change', () => render());
             document.getElementById('starsSelect').addEventListener('change', () => render());
             document.getElementById('recSelect').addEventListener('change', () => render());
@@ -805,7 +859,7 @@
             document.getElementById('budgetSlider').addEventListener('input', (e) => {
                 const val = parseInt(e.target.value);
                 document.getElementById('budgetVal').textContent = val >= 3600 ? 'Alle' : `bis ${val} €`;
-                render();
+                renderDebounced();
             });
 
             document.getElementById('quickFavBtn').addEventListener('click', (e) => { onlyFavs = !onlyFavs; e.currentTarget.classList.toggle('fav-active', onlyFavs); render(); });
@@ -835,20 +889,11 @@
 
         window.toggleFav = function(hotelName, ev, btnElement) {
             if (ev) ev.stopPropagation();
-            
-            // Lokales Array updaten für UI Reaktion
-            if (favorites.includes(hotelName)) {
-                favorites = favorites.filter(n => n !== hotelName);
-                if(btnElement) btnElement.textContent = '🤍';
-            } else {
-                favorites.push(hotelName);
-                if(btnElement) btnElement.textContent = '❤️';
-            }
-            
-            // Feuert im Hintergrund ans Sheet!
-            fetch(`${WEBHOOK_URL}?action=update_hotel&hotelName=${encodeURIComponent(hotelName)}&type=favorite`, { mode: 'no-cors' }).catch(() => {});
-            
-            // UI neu bauen
+            const nowFav = !favorites.includes(hotelName);
+            favorites = nowFav ? [...favorites, hotelName] : favorites.filter(n => n !== hotelName);
+            if (btnElement) btnElement.textContent = nowFav ? '❤️' : '🤍';
+            // Expliziter Wert statt Umschalten: ein verlorener oder doppelter Request kippt den Zustand nicht mehr
+            callWebhook(hotelName, { type: 'favorite', value: nowFav ? '1' : '0' });
             render();
         };
 
@@ -1026,7 +1071,7 @@
                             <button class="icon-btn ${isFav ? 'fav-active' : ''}" onclick="toggleFav('${safeName}', event, this)" title="Als Favorit speichern">${isFav ? '❤️' : '🤍'}</button>
                         </div>
                         
-                        <div class="hotel-card-header" style="background-image: url('${h.image || ''}');">
+                        <div class="hotel-card-header">${h.image ? `<img class="hc-bg" src="${esc(h.image)}" loading="lazy" decoding="async" alt="">` : ''}
                             <div class="card-title" onclick="openHotelModal('${safeName}')">${h.name} <span class="stars">${'★'.repeat(Math.floor(h.stars))}</span> ${newcomerHTML}</div>
                             <div class="location-badge" style="color:#e2e8f0; margin-bottom:0;">📍 ${h.region}${h.ort ? ' • ' + h.ort : ''}</div>
                         </div>
@@ -1197,6 +1242,11 @@
             else { chartHotels = [...withPrice].sort((a, b) => a.currentPrice - b.currentPrice).slice(0, 5); subtitle = `Top 5 günstigste Hotels der aktuellen Filterauswahl`; }
 
             document.getElementById('chartSubtitle').textContent = subtitle;
+
+            // Diagramm nur neu bauen, wenn sich Auswahl, Modus oder Preise geändert haben
+            const sig = [chartPreset, chartValueMode, chartHotels.map(h => `${h.id}:${h.currentPrice}`).join(',')].join('|');
+            if (chartInstance && sig === lastChartSig) return;
+            lastChartSig = sig;
 
             let activeTimes = globalAllTimes.filter(t => chartHotels.some(h => h.timeMap[t.key] !== undefined && h.timeMap[t.key] !== null));
             if (activeTimes.length === 0) activeTimes = globalAllTimes;
