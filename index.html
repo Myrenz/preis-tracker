@@ -1,736 +1,1487 @@
-#!/usr/bin/env python3
-"""
-HolidayCheck-Preistracker (Cloud / GitHub Actions & Lokal mit Stealth/Xvfb)
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mein Reise-Portal | Türkische Riviera 2027</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --primary-dark: #1557b0;
+            --bg: #f1f5f9;
+            --card-bg: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --green: #059669;
+            --green-bg: #d1fae5;
+            --orange: #d97706;
+            --orange-bg: #fef3c7;
+            --red: #dc2626;
+            --red-bg: #fee2e2;
+            --purple: #7c3aed;
+        }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 12px; }
+        .container { max-width: 1420px; margin: 0 auto; }
 
-- Flexibles Urlaubsfenster: 14.06.2027 - 28.06.2027 (7 Tage, Abflug FMO).
-- NEU: Automatischer Check auf bekannten RU-Fokus für russische Hotelketten!
-"""
-import argparse
-import csv
-import datetime as dt
-import io
-import json
-import os
-import random
-import re
-import sys
-import time
-import uuid
-from collections import defaultdict
-from pathlib import Path
-from urllib.parse import urlparse
+        /* Header */
+        .header { background: linear-gradient(135deg, #1e40af, #1d4ed8); color: white; padding: 16px 20px; border-radius: 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(30,64,175,0.15); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .header h1 { margin: 0 0 4px 0; font-size: 20px; }
+        .header p { margin: 0; font-size: 12px; opacity: 0.9; }
 
-import requests
+        .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+        .sync-status { background: rgba(255,255,255,0.18); color: white; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+        .scan-time { font-size: 11px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; font-weight: 600; }
 
-# ----------------------------- KONFIGURATION ---------------------------------
-SHEET_ID = "1MG0UwMZbmFoSxCdVp8pqspM5wgtgQlJGyoVesRXd5ag"
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyL8no7Spl4eJMQiZk-hrFBbBhdIitHQF6T7vcCXq7h2tPrsCLyICTYNl4kr0xviLfGtg/exec"
-WEBHOOK_TOKEN = "123456789"
-BROWSER_CHANNEL = os.getenv("BROWSER_CHANNEL", "msedge")
-API_HINT = os.getenv("API_HINT", "all-offers-service")
+        /* KPI Row */
+        .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 12px; }
+        .kpi-card { background: var(--card-bg); padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.03); cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
+        .kpi-card:hover { border-color: #cbd5e1; transform: translateY(-1px); }
+        .kpi-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+        .kpi-val { font-size: 18px; font-weight: 800; color: var(--text); }
+        .kpi-sub { font-size: 11px; color: var(--green); font-weight: 600; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-# EXAKTE SUCHPARAMETER (Flexibel im Urlaubsfenster 14.06.2027 - 28.06.2027, 7 Tage, Abflug FMO, 2 Erw.)
-SEARCH_QUERY = "?_offer=adults:2,airport:~FMO,departureDate:2027-06-14,duration:7,returnDate:2027-06-28,rooms:a-a"
-# -----------------------------------------------------------------------------
+        /* Main View Switcher + Region Tabs */
+        .top-nav-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+        .view-switcher { display: flex; background: #e2e8f0; padding: 4px; border-radius: 11px; gap: 4px; }
+        .view-btn { border: none; background: transparent; padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 800; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.15s; }
+        .view-btn:hover { color: #0f172a; }
+        .view-btn.active { background: white; color: var(--primary); box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
 
-MIN_OK, MAX_OK = 1000, 20000
-PAUSE_HOTEL = (2, 4)
-PAUSE_BLOCK = (5, 10)
-MAX_CONSECUTIVE_FAILS = 15
-WAIT_FOR_API_S = 40
-FLUSH_EVERY = 25
-POST_CHUNK = 100
+        .region-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+        .region-tab { background: var(--card-bg); border: 1px solid var(--border); padding: 7px 12px; border-radius: 9px; font-size: 12px; font-weight: 700; color: #334155; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 6px; transition: all 0.15s; }
+        .region-tab:hover { background: #f8fafc; border-color: #cbd5e1; }
+        .region-tab.active { background: var(--primary); color: white; border-color: var(--primary); box-shadow: 0 2px 8px rgba(26,115,232,0.25); }
+        .region-count { font-size: 11px; background: rgba(0,0,0,0.08); padding: 1px 6px; border-radius: 5px; }
+        .region-tab.active .region-count { background: rgba(255,255,255,0.25); color: white; }
 
-BASE = Path(__file__).resolve().parent
-PROFILE_DIR = BASE / "browser_profile"
-DEBUG_DIR = BASE / "debug"
-BACKUP_CSV = BASE / "preishistorie_backup.csv"
+        /* Action Bar */
+        .action-bar { background: var(--card-bg); padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
+        .search-box { flex: 1; min-width: 200px; }
+        .search-box input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; outline: none; background: #f8fafc; }
+        .search-box input:focus { border-color: var(--primary); background: #ffffff; box-shadow: 0 0 0 3px rgba(26,115,232,0.15); }
 
-UUID_RE = re.compile(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", re.I)
+        .chip-quick { padding: 8px 11px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #f1f5f9; color: #334155; border: 1px solid var(--border); cursor: pointer; user-select: none; transition: all 0.15s; display: flex; align-items: center; gap: 5px; }
+        .chip-quick:hover { background: #e2e8f0; }
+        .chip-quick.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .chip-quick.fav-active { background: #e11d48; color: white; border-color: #e11d48; }
+        .chip-quick.new-active { background: #f59e0b; color: white; border-color: #f59e0b; }
 
-# ------------------------- Standort-Klassifizierung --------------------------
-SUB_LOCATIONS = [
-    (r"\bokurcalar\b", "Alanya", "Okurcalar"),
-    (r"\b(incekum|i̇ncekum)\b", "Alanya", "İncekum"),
-    (r"\bavsallar\b", "Alanya", "Avsallar"),
-    (r"\b(türkler|turkler|türklek|fugla)\b", "Alanya", "Türkler"),
-    (r"\b(konaklı|konakli)\b", "Alanya", "Konaklı"),
-    (r"\bpayallar\b", "Alanya", "Payallar"),
-    (r"\b(kargıcak|kargicak)\b", "Alanya", "Kargıcak"),
-    (r"\bmahmutlar\b", "Alanya", "Mahmutlar"),
-    (r"\bkestel\b", "Alanya", "Kestel"),
-    (r"\btosmur\b", "Alanya", "Tosmur"),
-    (r"\b(obagöl|obagol|oba\b|cikcilli)\b", "Alanya", "Oba"),
-    (r"\b(kleopatra|cleopatra|damlataş|damlatas|kızlarpınarı|kizlarpinari)\b", "Alanya", "Kleopatra-Strand"),
-    (r"\b(kumköy|kumkoy|kumkoey|ılıca|ilica)\b", "Side", "Kumköy"),
-    (r"\bevrenseki\b", "Side", "Evrenseki"),
-    (r"\b(çolaklı|colakli)\b", "Side", "Çolaklı"),
-    (r"\b(gündoğdu|gundogdu)\b", "Side", "Gündoğdu"),
-    (r"\bsorgun\b", "Side", "Sorgun"),
-    (r"\b(titreyengöl|titreyengol)\b", "Side", "Titreyengöl"),
-    (r"\b(kızılağaç|kizilagac)\b", "Side", "Kızılağaç"),
-    (r"\b(kızılot|kizilot)\b", "Side", "Kızılot"),
-    (r"\b(çenger|cenger)\b", "Side", "Çenger"),
-    (r"\b(boğazkent|bogazkent)\b", "Belek", "Boğazkent"),
-    (r"\bkadriye\b", "Belek", "Kadriye"),
-    (r"\bbeldibi\b", "Kemer", "Beldibi"),
-    (r"\b(göynük|goynuk|goynük)\b", "Kemer", "Göynük"),
-    (r"\b(kiriş|kiris)\b", "Kemer", "Kiriş"),
-    (r"\b(çamyuva|camyuva)\b", "Kemer", "Çamyuva"),
-    (r"\btekirova\b", "Kemer", "Tekirova"),
-    (r"\bkundu\b", "Antalya", "Lara / Kundu"),
-    (r"\b(lara|kemerağzı|kemeragzi|güzeloba|guzeloba)\b", "Antalya", "Lara"),
-    (r"\b(konyaaltı|konyaalti)\b", "Antalya", "Konyaaltı"),
-]
+        .btn-toggle { background: #f8fafc; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #1e293b; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.15s; }
+        .btn-toggle:hover { background: #e2e8f0; }
+        .btn-toggle.active { background: #eff6ff; border-color: var(--primary); color: var(--primary); }
 
+        /* Filter Drawer */
+        .filter-panel { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border); padding: 16px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); display: none; }
+        .filter-panel.is-open { display: block; }
+        .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 14px; }
+        .filter-group { display: flex; flex-direction: column; gap: 5px; }
+        .filter-group label { font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; }
+        .filter-group select { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: #f8fafc; font-weight: 600; }
+        .filter-group input[type="range"] { accent-color: var(--primary); margin-top: 6px; cursor: pointer; }
 
-def _find_sublocation(text: str, allowed_region: str | None = None):
-    if not text:
-        return None
-    best_match, best_pos = None, 10**9
-    for pattern, reg, sub_ort in SUB_LOCATIONS:
-        if allowed_region and reg != allowed_region:
-            continue
-        m = re.search(pattern, text, flags=re.IGNORECASE)
-        if m and m.start() < best_pos:
-            best_pos = m.start()
-            best_match = (reg, sub_ort)
-    return best_match
+        .tags-wrapper { padding-top: 12px; border-top: 1px solid var(--border); }
+        .tags-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; }
+        .tags-cloud { display: flex; flex-wrap: wrap; gap: 6px; max-height: 150px; overflow-y: auto; padding-right: 4px; }
+        .tag-filter { padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; background: #f8fafc; color: #475569; border: 1px solid var(--border); cursor: pointer; user-select: none; text-transform: capitalize; }
+        .tag-filter:hover { background: #e2e8f0; }
+        .tag-filter.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .reset-link { background: none; border: none; color: var(--red); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; }
 
+        /* Chart Section */
+        .chart-section { background: var(--card-bg); padding: 16px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.03); margin-bottom: 14px; display: none; }
+        .chart-section.is-open { display: block; }
+        .chart-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+        .chart-title { font-size: 15px; font-weight: 800; margin: 0 0 3px 0; color: #1e293b; }
+        .chart-sub { font-size: 11px; color: var(--muted); }
 
-def _detect_main_region(text: str) -> str | None:
-    if not text:
-        return None
-    t = text.lower()
-    sub = _find_sublocation(t)
-    if sub:
-        return sub[0]
-    patterns = [
-        (r"\balanya\b", "Alanya"),
-        (r"\b(belek|serik)\b", "Belek"),
-        (r"\bkemer\b", "Kemer"),
-        (r"\b(side|manavgat)\b", "Side"),
-        (r"\b(aksu|muratpaşa|muratpasa|lara|kundu|konyaaltı|konyaalti)\b", "Antalya"),
-    ]
-    best_reg, best_pos = None, 10**9
-    for pat, reg in patterns:
-        m = re.search(pat, t)
-        if m and m.start() < best_pos:
-            best_pos = m.start()
-            best_reg = reg
-    return best_reg
+        .chart-controls-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+        .preset-group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .preset-btn { padding: 6px 10px; border-radius: 7px; font-size: 11px; font-weight: 700; border: 1px solid var(--border); background: #f8fafc; color: #334155; cursor: pointer; transition: all 0.15s; }
+        .preset-btn:hover { background: #e2e8f0; }
+        .preset-btn.active { background: #1e293b; color: white; border-color: #1e293b; }
+        .preset-btn.clear-btn { color: var(--red); border-color: #fecaca; background: #fff5f5; }
 
+        .mode-switch { display: flex; background: #f1f5f9; padding: 3px; border-radius: 8px; gap: 3px; }
+        .mode-btn { border: none; background: transparent; padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; color: #475569; cursor: pointer; }
+        .mode-btn.active { background: white; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
-def classify_location(hotel_name: str, breadcrumbs: str, address_line: str, body_text: str) -> tuple[str, str]:
-    name_low = (hotel_name or "").lower()
-    bread_low = (breadcrumbs or "").lower()
-    addr_low = (address_line or "").lower()
-    clean_body = re.sub(r"[^\n]*flughafen[^\n]*", "", body_text or "", flags=re.IGNORECASE)
+        .chart-box { height: 290px; position: relative; }
 
-    locked_region = _detect_main_region(name_low)
-    if not locked_region and "antalya" in name_low:
-        locked_region = "Antalya"
+        /* Results & Sort */
+        .results-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px; font-weight: 700; color: #475569; flex-wrap: wrap; gap: 8px; }
+        .sort-inline { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+        .sort-inline select { padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border); background: white; font-weight: 700; font-size: 12px; }
 
-    zip_m = re.search(r"\b(07\d{3})\b", addr_low)
-    if zip_m and not locked_region:
-        z = int(zip_m.group(1))
-        if 7400 <= z <= 7499:
-            locked_region = "Alanya"
-        elif 7600 <= z <= 7699:
-            locked_region = "Side"
-        elif 7500 <= z <= 7599:
-            locked_region = "Belek"
-        elif 7980 <= z <= 7999:
-            locked_region = "Kemer"
-        elif 7000 <= z <= 7299:
-            locked_region = "Antalya"
+        /* Cards Grid */
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(305px, 1fr)); gap: 14px; margin-bottom: 30px; }
+        .card { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.02); display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.15s, box-shadow 0.15s; overflow: hidden; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.06); }
+        .card.in-budget { border-bottom: 5px solid var(--green); }
+        .card.near-budget { border-bottom: 5px solid var(--orange); }
+        .card.over-budget { border-bottom: 5px solid var(--red); }
+        .card.sold-out { opacity: 0.65; filter: grayscale(40%); }
+        .card { content-visibility: auto; contain-intrinsic-size: auto 430px; }
 
-    if not locked_region:
-        locked_region = _detect_main_region(bread_low) or _detect_main_region(addr_low) or _detect_main_region(clean_body[:1500])
-    if not locked_region:
-        locked_region = "Antalya" if "antalya" in addr_low else "Side"
+        .hotel-card-header {
+            background-color: #64748b;
+            background-size: cover;
+            background-position: center;
+            position: relative;
+            color: white; 
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
+            padding: 15px; 
+            min-height: 140px; 
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: flex-start;
+        }
 
-    for src in (name_low, bread_low, addr_low, clean_body[:1500].lower()):
-        sub = _find_sublocation(src, allowed_region=locked_region)
-        if sub:
-            return locked_region, sub[1]
+        .hotel-card-header::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.0) 40%, rgba(0,0,0,0.7) 100%);
+            z-index: 1;
+        }
 
-    return locked_region, ""
+        .hotel-card-header > * { position: relative; z-index: 2; }
+        .hotel-card-header > img.hc-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
 
+        .card-title { font-size: 16px; font-weight: 800; color: white; line-height: 1.3; cursor: pointer; margin-bottom: 4px; }
+        .card-title:hover { color: #93c5fd; }
+        .stars { color: #f59e0b; font-size: 12px; margin-left: 4px; text-shadow: 1px 1px 1px rgba(0,0,0,0.8); }
 
-def extract_tags_from_text(text: str) -> str:
-    low = (text or "").lower()
-    tags = []
-    if "direkt am strand" in low or "direkter strand" in low or "eigenem strand" in low:
-        tags.append("Direkt am Strand")
-    elif "strand" in low:
-        tags.append("Strandnah")
-    if "aquapark" in low or "wasserrutsch" in low:
-        tags.append("Aquapark")
-    if "swim-up" in low or "swim up" in low:
-        tags.append("Swim-Up Option")
-    if "adults only" in low or "erwachsenenhotel" in low or "ab 16" in low or "ab 18" in low:
-        tags.append("Adults Only")
-    elif "kinderclub" in low or "miniclub" in low or "familien" in low:
-        tags.append("Familienhotel")
-    if "ultra all inclusive" in low or "24 stunden" in low or "24h" in low:
-        tags.append("All Inclusive Plus / 24h")
-    if "wlan" in low or "wi-fi" in low:
-        tags.append("WLAN kostenfrei")
-    return ", ".join(tags[:5]) if tags else "All Inclusive, Strandnah"
+        .newcomer-badge { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle; text-shadow: none; box-shadow: 0 2px 4px rgba(0,0,0,0.3); text-transform: uppercase; letter-spacing: 0.5px; }
 
+        .interaction-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 15px; background: #f8fafc; border-bottom: 1px solid var(--border); font-size: 0.85em; color: var(--muted); font-weight: 600; }
+        .interaction-bar button { background: white; border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; cursor: pointer; margin-left: 5px; transition: 0.2s; font-size: 12px; }
+        .interaction-bar button:hover { background: #e2e8f0; }
 
-def fallback_name_from_url(url: str) -> str:
-    parsed = urlparse(url)
-    parts = [p for p in parsed.path.split("/") if p]
-    for p in parts:
-        if p.startswith("angebote-"):
-            slug = p[len("angebote-"):]
-            return " ".join(w.capitalize() for w in slug.split("-") if w)
-    if len(parts) >= 2 and parts[0].lower() == "hi":
-        slug = re.sub(r"-hotel$", "", parts[1], flags=re.I)
-        return " ".join(w.capitalize() for w in slug.split("-") if w)
-    return "Neues Hotel"
+        .card-body { padding: 14px; display: flex; flex-direction: column; height: 100%; justify-content: space-between; }
+        .card-actions-top { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; gap: 6px; }
 
+        .hc-badges { display: flex; gap: 0; align-items: center; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); width: fit-content; margin-bottom: 8px; }
+        .hc-rec { background: #1557b0; color: white; font-weight: 800; font-size: 12px; padding: 3px 7px; display: flex; align-items: center; gap: 4px; }
+        .hc-rat { background: white; color: #0f172a; font-weight: 800; font-size: 12px; padding: 3px 7px; display: flex; align-items: center; gap: 4px; border-left: 1px solid var(--border); }
+        .hc-sun { color: #f59e0b; }
 
-# ------------------------------ Zeit -----------------------------------------
-def _last_sunday(year: int, month: int) -> dt.date:
-    d = dt.date(year, month, 31)
-    return d - dt.timedelta(days=(d.weekday() + 1) % 7)
+        .icon-btn { background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.1); border-radius: 7px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; transition: all 0.15s; }
+        .icon-btn:hover { background: white; transform: scale(1.05); }
+        .icon-btn.fav-active { background: #ffe4e6; border-color: #fda4af; }
+        .icon-btn.chart-active { background: #dbeafe; border-color: #93c5fd; }
 
+        .location-badge { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+        .tags-wrap { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+        .tag-badge { font-size: 10px; background: #f1f5f9; color: #334155; padding: 3px 7px; border-radius: 5px; font-weight: 600; text-transform: capitalize; }
+        .tag-badge.swimup { background: #ecfeff; color: #0891b2; border: 1px solid #a5f3fc; }
+        .tag-badge.strand { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
 
-def berlin_now(now_utc: dt.datetime | None = None) -> dt.datetime:
-    utc = now_utc or dt.datetime.now(dt.timezone.utc)
-    start = dt.datetime.combine(_last_sunday(utc.year, 3), dt.time(1, 0), tzinfo=dt.timezone.utc)
-    end = dt.datetime.combine(_last_sunday(utc.year, 10), dt.time(1, 0), tzinfo=dt.timezone.utc)
-    offset = 2 if start <= utc < end else 1
-    return utc.astimezone(dt.timezone(dt.timedelta(hours=offset)))
+        .missing-link-badge { font-size: 10px; font-weight: 700; background: #fee2e2; color: #991b1b; padding: 3px 6px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px; }
 
+        .price-section { background: #f8fafc; padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e2e8f0; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+        .price-section:hover { background: #eff6ff; border-color: #93c5fd; }
+        .price-row { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px; }
+        .price-tag { font-size: 21px; font-weight: 900; color: var(--primary); }
+        .price-tag.green { color: var(--green); }
+        .price-tag.waiting { font-size: 16px; color: var(--muted); font-weight: 800; }
 
-# ------------------------------ Hotelliste -----------------------------------
-def load_hotels(xlsx: str | None) -> list[dict]:
-    if xlsx:
-        import openpyxl
-        ws = openpyxl.load_workbook(xlsx, read_only=True, data_only=True)["hotels"]
-        rows = list(ws.iter_rows(values_only=True))
-        head = [str(c).strip().lower() for c in rows[0]]
-        recs = [dict(zip(head, r)) for r in rows[1:]]
-    else:
-        r = requests.get(
-            f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq",
-            params={"tqx": "out:csv", "sheet": "hotels", "headers": 1},
-            timeout=60,
-        )
-        r.raise_for_status()
-        reader = csv.DictReader(io.StringIO(r.content.decode("utf-8")))
-        recs = [{(k or "").strip().lower(): v for k, v in row.items()} for row in reader]
+        .badges-right { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+        .trend { font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 5px; }
+        .trend.down { background: var(--green-bg); color: var(--green); }
+        .trend.up { background: var(--red-bg); color: var(--red); }
+        .trend.same { background: #e2e8f0; color: #475569; }
+        .alltime-badge { font-size: 10px; font-weight: 800; background: #fef3c7; color: #b45309; padding: 2px 6px; border-radius: 5px; }
 
-    hotels = []
-    for x in recs:
-        raw_url = str(x.get("url") or "").strip()
-        if not raw_url.startswith("http"):
-            continue
+        .range-bar-wrap { margin-top: 7px; }
+        .range-track { height: 5px; background: #e2e8f0; border-radius: 4px; position: relative; overflow: hidden; }
+        .range-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #10b981, #f59e0b, #ef4444); }
+        .range-marker { width: 9px; height: 9px; border-radius: 50%; background: #0f172a; border: 2px solid white; position: absolute; top: -2px; transform: translateX(-50%); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
 
-        active_raw = str(x.get("active") or "").strip().lower()
-        if active_raw in ("false", "0", "nein", "no", "falsch"):
-            continue
+        .meta-stats { display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--muted); margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--border); }
+        .analyze-hint { color: var(--primary); font-weight: 700; }
 
-        row_id = str(x.get("id") or "").strip()
-        name = str(x.get("name") or "").strip()
-        region = str(x.get("region") or "").strip()
-        ort = str(x.get("ort") or "").strip()
-        stars = str(x.get("stars") or "").strip()
-        tags = str(x.get("tags") or "").strip()
-        image = str(x.get("image") or "").strip()
-        
-        # Lese den RU Fokus aus der neuen Spalte in Google Sheets
-        ru_focus = str(x.get("ru_focus") or "").strip()
+        .btn-row { display: flex; gap: 6px; }
+        .offer-btn { flex: 1; text-align: center; background: var(--primary); color: white; text-decoration: none; font-weight: 700; font-size: 12px; padding: 9px; border-radius: 7px; transition: background 0.15s; border: none; cursor: pointer; }
+        .offer-btn:hover { background: var(--primary-dark); }
+        .offer-btn.search-fallback { background: #475569; }
+        .btn-detail { background: #f1f5f9; color: #1e293b; border: 1px solid var(--border); border-radius: 7px; padding: 9px 11px; font-size: 12px; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+        .btn-detail:hover { background: #e2e8f0; }
 
-        base_url = raw_url.split("?")[0].rstrip("/")
-        scrape_url = base_url + SEARCH_QUERY
+        /* Matrix / Heatmap Table View */
+        .matrix-wrapper { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.03); overflow-x: auto; margin-bottom: 30px; display: none; }
+        .matrix-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 850px; }
+        .matrix-table th { background: #f8fafc; color: #475569; font-weight: 800; text-transform: uppercase; font-size: 11px; padding: 10px 10px; text-align: left; border-bottom: 2px solid var(--border); position: sticky; top: 0; z-index: 2; white-space: nowrap; }
+        .matrix-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        .matrix-table tr:hover td { background-color: #f8fafc; }
+        .matrix-hotel-cell { font-weight: 800; color: #0f172a; cursor: pointer; min-width: 230px; }
+        .matrix-hotel-cell:hover { color: var(--primary); }
+        .matrix-sub { font-size: 10px; color: var(--muted); font-weight: 600; display: block; margin-bottom: 4px; }
+        .heat-cell { text-align: right; font-weight: 700; white-space: nowrap; border-left: 1px solid #f1f5f9; }
+        .heat-down { background: #ecfdf5 !important; color: #047857; }
+        .heat-up { background: #fef2f2 !important; color: #b91c1c; }
+        .heat-low { box-shadow: inset 0 0 0 1.5px #10b981; font-weight: 900; }
+        .heat-delta { display: block; font-size: 9px; font-weight: 700; opacity: 0.85; }
 
-        m_uuid = UUID_RE.search(base_url)
-        hc_uuid = m_uuid.group(1).lower() if m_uuid else ""
+        /* Side-by-Side Comparison View */
+        .compare-wrapper { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border); padding: 16px; margin-bottom: 30px; overflow-x: auto; display: none; }
+        .compare-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 650px; }
+        .compare-table th, .compare-table td { padding: 11px 14px; border: 1px solid var(--border); text-align: left; vertical-align: top; }
+        .compare-table th { background: #f8fafc; width: 170px; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; }
 
-        auto_update = {}
-        if not row_id:
-            auto_update["id"] = hc_uuid or str(uuid.uuid4())
-        if not active_raw:
-            auto_update["active"] = "TRUE"
-        if not image and hc_uuid:
-            auto_update["image"] = f"https://www.holidaycheck.de/main-photo-redirect/{hc_uuid}/w_640,h_480,c_fill,q_auto,f_auto"
+        /* Detail Modal */
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(3px); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 14px; }
+        .modal-backdrop.is-open { display: flex; }
+        .modal-card { background: white; border-radius: 16px; max-width: 960px; width: 100%; max-height: 92vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.25); padding: 20px; position: relative; }
+        .modal-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 14px; }
+        .modal-close { background: #f1f5f9; border: none; width: 34px; height: 34px; border-radius: 8px; font-size: 18px; font-weight: 800; cursor: pointer; color: #334155; }
+        .modal-close:hover { background: #e2e8f0; }
+        .modal-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
+        .modal-kpi { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+        .modal-kpi-label { font-size: 10px; font-weight: 800; text-transform: uppercase; color: var(--muted); }
+        .modal-kpi-val { font-size: 18px; font-weight: 900; color: var(--text); margin-top: 2px; }
+        .modal-chart-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+        .modal-chart-box { height: 250px; position: relative; margin-bottom: 16px; background: #ffffff; border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+        .history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .history-table th { background: #f8fafc; padding: 8px 10px; text-align: left; font-size: 11px; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); }
+        .history-table td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; font-weight: 600; }
 
-        need_page_meta = not (name and region and stars and tags)
+        .empty-state { text-align: center; padding: 40px 20px; background: white; border-radius: 12px; border: 1px solid var(--border); color: var(--muted); grid-column: 1 / -1; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>🌴 Mein Türkei-Reiseportal (Juni 2027)</h1>
+                <p>2 Erwachsene • 7 Tage • Flexibles Fenster 14.-28.06. • Abflug FMO • Google Sheets</p>
+            </div>
+            <div class="header-right">
+                <div class="sync-status" id="syncStatus"><span>Verbinde mit Google Sheets...</span></div>
+                <div class="scan-time" id="lastScanTime">Letzter Tracker-Scan: Lädt...</div>
+            </div>
+        </div>
 
-        hotels.append({
-            "name": name or fallback_name_from_url(base_url),
-            "has_name": bool(name),
-            "has_region": bool(region),
-            "has_ort": bool(ort),
-            "has_stars": bool(stars),
-            "has_tags": bool(tags),
-            "has_ru_focus": bool(ru_focus),
-            "raw_url": raw_url,
-            "scrape_url": scrape_url,
-            "auto_update": auto_update,
-            "need_page_meta": need_page_meta,
-        })
-    return hotels
+        <div class="kpi-row">
+            <div class="kpi-card" onclick="setViewMode('GRID')">
+                <div class="kpi-label">Gefilterte Hotels</div>
+                <div class="kpi-val" id="kpiCount">-</div>
+                <div class="kpi-sub" id="kpiActiveSub">Datenbank lädt...</div>
+            </div>
+            <div class="kpi-card" id="kpiBestCard">
+                <div class="kpi-label">Günstigstes Angebot</div>
+                <div class="kpi-val" id="kpiBestPrice">-</div>
+                <div class="kpi-sub" id="kpiBestHotel">-</div>
+            </div>
+            <div class="kpi-card" id="kpiDropCard">
+                <div class="kpi-label">Bester Preis-Drop</div>
+                <div class="kpi-val" id="kpiBestDrop">-</div>
+                <div class="kpi-sub" id="kpiDropHotel">im Vgl. zum letzten Check</div>
+            </div>
+            <div class="kpi-card" onclick="applyChartPreset('DEALS')">
+                <div class="kpi-label">Größter Rabatt vom Hoch</div>
+                <div class="kpi-val" id="kpiPeakDrop">-</div>
+                <div class="kpi-sub" id="kpiPeakHotel">Unter eigenem Höchstpreis</div>
+            </div>
+            <div class="kpi-card" onclick="document.getElementById('quickFavBtn').click()">
+                <div class="kpi-label">Meine Favoriten ❤️</div>
+                <div class="kpi-val" id="kpiFavs">0</div>
+                <div class="kpi-sub">Gespeichert über Cloud</div>
+            </div>
+        </div>
 
+        <div class="top-nav-row">
+            <div class="view-switcher">
+                <button class="view-btn active" id="viewBtnGrid" onclick="setViewMode('GRID')">🏨 Hotel-Karten</button>
+                <button class="view-btn" id="viewBtnMatrix" onclick="setViewMode('MATRIX')">📊 Preis-Matrix (Heatmap)</button>
+                <button class="view-btn" id="viewBtnCompare" onclick="setViewMode('COMPARE')">⚖️ Direkt-Vergleich</button>
+            </div>
+            <div class="region-tabs" id="regionTabs"></div>
+        </div>
 
-# ------------------------------ Preis-Parser ---------------------------------
-def to_number(v):
-    if isinstance(v, bool):
-        return None
-    if isinstance(v, (int, float)):
-        return float(v)
-    if isinstance(v, str):
-        s = v.replace("€", "").replace("EUR", "").strip()
-        if "," in s:
-            s = s.replace(".", "").replace(",", ".")
-        elif re.fullmatch(r"\d{1,3}(\.\d{3})+", s):
-            s = s.replace(".", "")
-        try:
-            return float(s)
-        except ValueError:
-            return None
-    return None
+        <div class="action-bar">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="🔍 Hotel, Ort oder Stichwort suchen...">
+            </div>
+            <div class="chip-quick" id="quickFavBtn">❤️ Favoriten (<span id="favQuickCount">0</span>)</div>
+            <div class="chip-quick" id="quickRuBtn">🇷🇺 Viel Russisch</div>
+            <div class="chip-quick" id="quickNewBtn">🌟 Neu entdeckt (<span id="newCount">0</span>)</div>
+            <div class="chip-quick" id="quickWithPriceBtn">💶 Nur verfügbar</div>
+            <div class="chip-quick" id="quick2kBtn">🎯 Bis 2.000 €</div>
+            <div class="chip-quick" id="quickSwimBtn">🏊 Swim-Up</div>
+            <div class="chip-quick" id="quickBeachBtn">🏖️ Direkt am Strand</div>
 
+            <button class="btn-toggle" id="toggleFilterBtn" onclick="toggleFilterDrawer()">
+                <span>🎛️ Weitere Filter</span>
+                <span id="filterArrow">▾</span>
+            </button>
+            <button class="btn-toggle active" id="toggleChartBtn" onclick="toggleChartSection()">
+                <span>📈 Preisverlauf</span>
+                <span id="chartArrow">▴</span>
+            </button>
+        </div>
 
-def extract_price(payloads: list) -> tuple[float | None, str]:
-    for data in reversed(payloads):
-        if not isinstance(data, dict):
-            continue
-        offers = (data.get("data") or {}).get("offers", [])
-        if isinstance(offers, list) and len(offers) > 0:
-            first_offer = offers[0]
+        <div class="filter-panel" id="filterDrawer">
+            <div class="filter-grid">
+                <div class="filter-group">
+                    <label>⭐ Mindest-Sterne</label>
+                    <select id="starsSelect">
+                        <option value="0">Alle Sterne-Kategorien</option>
+                        <option value="5">Nur 5 Sterne (★★★★★)</option>
+                        <option value="4.5">Ab 4,5 Sterne</option>
+                        <option value="4">Ab 4 Sterne</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>👍 Weiterempfehlung (HC)</label>
+                    <select id="recSelect">
+                        <option value="0">Alle anzeigen</option>
+                        <option value="98">Mindestens 98%</option>
+                        <option value="95">Mindestens 95%</option>
+                        <option value="90">Mindestens 90%</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>💰 Max. Gesamtbudget: <span id="budgetVal" style="color:var(--primary); font-weight:800;">Alle</span></label>
+                    <input type="range" id="budgetSlider" min="1200" max="3600" step="50" value="3600">
+                </div>
+            </div>
+            <div class="tags-wrapper">
+                <div class="tags-header">
+                    <span>🏷️ Schlagwörter:</span>
+                    <button class="reset-link" id="resetFiltersBtn">🔄 Filter zurücksetzen</button>
+                </div>
+                <div class="tags-cloud" id="tagsCloud"></div>
+            </div>
+        </div>
 
-            tp = first_offer.get("totalPrice", {})
-            if isinstance(tp, dict):
-                val = to_number(tp.get("amount") or tp.get("value"))
-                if val is not None and MIN_OK <= val <= MAX_OK:
-                    return val, "api=totalPrice"
-            elif isinstance(tp, (int, float)):
-                if MIN_OK <= float(tp) <= MAX_OK:
-                    return float(tp), "api=totalPrice(raw)"
+        <div class="chart-section is-open" id="chartSection">
+            <div class="chart-header">
+                <div>
+                    <h2 class="chart-title">📈 Preisverlauf & Kurven-Vergleich</h2>
+                    <div class="chart-sub" id="chartSubtitle">Chronologischer Verlauf der ausgewählten Hotels</div>
+                </div>
+                <div class="mode-switch">
+                    <button class="mode-btn active" id="modeBtnAbs" onclick="setChartValueMode('ABS')">💶 Preis (€)</button>
+                    <button class="mode-btn" id="modeBtnDiff" onclick="setChartValueMode('DIFF')">📊 Veränderung (± €)</button>
+                    <button class="mode-btn" id="modeBtnPct" onclick="setChartValueMode('PCT')">📈 Prozent (± %)</button>
+                </div>
+            </div>
+            <div class="chart-controls-bar">
+                <div class="preset-group">
+                    <span style="font-size:11px; font-weight:800; color:var(--muted);">Schnellwahl:</span>
+                    <button class="preset-btn active" id="presetBtnTOP5" onclick="applyChartPreset('TOP5')">💶 Top 5 Günstigste</button>
+                    <button class="preset-btn" id="presetBtnDROPS" onclick="applyChartPreset('DROPS')">🔥 Top 5 Preis-Drops</button>
+                    <button class="preset-btn" id="presetBtnDEALS" onclick="applyChartPreset('DEALS')">💎 Größter Rabatt vom Hoch</button>
+                    <button class="preset-btn" id="presetBtnVOLATILE" onclick="applyChartPreset('VOLATILE')">📊 Größte Schwankung</button>
+                    <button class="preset-btn" id="presetBtnFAVS" onclick="applyChartPreset('FAVS')">❤️ Meine Favoriten</button>
+                    <button class="preset-btn" id="presetBtnPINNED" onclick="applyChartPreset('PINNED')">📌 Meine Auswahl (<span id="pinCountLabel">0</span>)</button>
+                    <button class="preset-btn clear-btn" id="clearPinsBtn" onclick="clearChartPins()" style="display:none;">🗑️ Auswahl leeren</button>
+                </div>
+            </div>
+            <div class="chart-box">
+                <canvas id="comparisonChart"></canvas>
+            </div>
+        </div>
 
-            p = first_offer.get("price", {})
-            if isinstance(p, dict):
-                val = to_number(p.get("amount") or p.get("value"))
-                if val is not None and MIN_OK <= val <= MAX_OK:
-                    return val, "api=price"
-    return None, ""
+        <div class="results-meta">
+            <span id="resultsText">Lade Hotels...</span>
+            <div class="sort-inline">
+                <label for="sortSelect">🔃 Sortierung:</label>
+                <select id="sortSelect">
+                    <option value="FAV_FIRST">❤️ Favoriten & Günstigste zuerst</option>
+                    <option value="PRICE_ASC">💶 Preis: Günstigste zuerst</option>
+                    <option value="PRICE_DESC">💶 Preis: Höchste zuerst</option>
+                    <option value="RATING_DESC">☀️ Beste Bewertung zuerst</option>
+                    <option value="DROP_DESC">📉 Größte Senkung (zum Vortag)</option>
+                    <option value="DEAL_DESC">💎 Größter Rabatt vom Höchstpreis</option>
+                    <option value="VOLATILE_DESC">📊 Größte Preis-Spanne (Schwankung)</option>
+                    <option value="NAME_ASC">🔤 Hotelname (A - Z)</option>
+                </select>
+            </div>
+        </div>
 
+        <div class="grid" id="hotelGrid"></div>
 
-def classify_failure(payloads: list, blocked: bool) -> str:
-    if blocked:
-        return "blocked"
-    if not payloads:
-        return "no_response"
-    for data in payloads:
-        if isinstance(data, dict):
-            offers = (data.get("data") or {}).get("offers")
-            if isinstance(offers, list) and len(offers) == 0:
-                return "no_offer"
-    return "unparsed"
+        <div class="matrix-wrapper" id="matrixWrapper">
+            <table class="matrix-table" id="matrixTable"></table>
+        </div>
 
+        <div class="compare-wrapper" id="compareWrapper">
+            <div id="compareContent"></div>
+        </div>
+    </div>
 
-def build_details(base: str, rating: str, rec: str, count: str) -> str:
-    parts = [base] if base else []
-    if rating:
-        parts.append(f"rating={rating}")
-    if rec:
-        parts.append(f"rec={rec}")
-    if count:
-        parts.append(f"count={count}")
-    return "|".join(parts)
+    <!-- Hotel-Detail-Modal -->
+    <div class="modal-backdrop" id="detailModal" onclick="if(event.target===this) closeHotelModal()">
+        <div class="modal-card">
+            <div class="modal-top">
+                <div>
+                    <h2 id="modalTitle" style="margin:0 0 4px 0; font-size:19px;">Hotel</h2>
+                    <div id="modalMeta" style="font-size:12px; color:var(--muted); font-weight:600; margin-bottom: 6px;"></div>
+                    <div id="modalHCBadge"></div>
+                    <div id="modalTags" class="tags-wrap" style="margin-top:6px; margin-bottom:0;"></div>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <button id="modalOfferBtn" class="offer-btn" style="padding:8px 14px; border:none;">Zum Angebot ↗</button>
+                    <button class="modal-close" onclick="closeHotelModal()">✕</button>
+                </div>
+            </div>
 
+            <div class="modal-kpis" id="modalKpis"></div>
 
-# ------------------------------ Browser --------------------------------------
-def open_context(p, show: bool):
-    PROFILE_DIR.mkdir(exist_ok=True)
-    launch_args = [
-        "--disable-blink-features=AutomationControlled",
-        "--disable-features=IsolateOrigins,site-per-process",
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--window-size=1920,1080",
-    ]
-    kwargs = {
-        "headless": not show,
-        "locale": "de-DE",
-        "timezone_id": "Europe/Berlin",
-        "viewport": {"width": 1920, "height": 1080},
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "args": launch_args,
-    }
-    if BROWSER_CHANNEL and BROWSER_CHANNEL != "chromium":
-        kwargs["channel"] = BROWSER_CHANNEL
-    ctx = p.chromium.launch_persistent_context(str(PROFILE_DIR), **kwargs)
-    ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
-    return ctx
+            <div class="modal-chart-bar">
+                <div style="font-size:13px; font-weight:800; color:#1e293b;">📈 Detaillierter Preisverlauf & Durchschnitt</div>
+                <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+                    <label for="modalCompareSelect" style="font-weight:700; color:var(--muted);">Direkt vergleichen mit:</label>
+                    <select id="modalCompareSelect" onchange="renderModalChart()" style="padding:5px 9px; border-radius:7px; border:1px solid var(--border); font-weight:700; font-size:12px;">
+                        <option value="">-- Kein 2. Hotel (Nur Durchschnittslinie) --</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-chart-box">
+                <canvas id="modalSingleChart"></canvas>
+            </div>
 
+            <h3 style="font-size:13px; font-weight:800; margin:0 0 8px 0; color:#1e293b;">📋 Alle gemessenen Preise (Chronologisch)</h3>
+            <div style="max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:8px;">
+                <table class="history-table" id="modalHistoryTable"></table>
+            </div>
+        </div>
+    </div>
 
-def fetch_offers(ctx, url: str, need_meta: bool = False):
-    page = ctx.new_page()
-    hits, seen = [], []
+    <script>
+        const SPREADSHEET_ID = "1MG0UwMZbmFoSxCdVp8pqspM5wgtgQlJGyoVesRXd5ag";
+        const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyL8no7Spl4eJMQiZk-hrFBbBhdIitHQF6T7vcCXq7h2tPrsCLyICTYNl4kr0xviLfGtg/exec";
+        const FMO_SEARCH_QUERY = "?_offer=adults:2,airport:~FMO,departureDate:2027-06-14,duration:7,returnDate:2027-06-28,rooms:a-a";
 
-    def route_intercept(route):
-        if route.request.resource_type in ("image", "media", "font", "stylesheet"):
-            route.abort()
-        else:
-            route.continue_()
-    page.route("**/*", route_intercept)
+        let allHotels = [];
+        let favorites = [];
+        let chartPinned = JSON.parse(localStorage.getItem('chartPinned_2027') || '[]');
+        let activeRegion = 'ALL';
+        let activeTag = null;
+        let onlyFavs = false;
+        let onlyRu = false;
+        let onlyWithPrice = false;
+        let onlyNewcomers = false;
+        let onlyUnder2k = false;
+        let onlySwimUp = false;
+        let onlyBeach = false;
+        let filterDrawerOpen = false;
+        let chartVisible = true;
+        let viewMode = 'GRID'; 
+        let chartPreset = chartPinned.length > 0 ? 'PINNED' : 'TOP5';
+        let chartValueMode = 'ABS'; 
+        let chartInstance = null;
+        let lastChartSig = '';
+        let modalChartInstance = null;
+        let currentModalHotel = null;
+        let globalAllTimes = [];
+        let listenersInitialized = false;
 
-    def on_response(resp):
-        try:
-            if resp.request.resource_type not in ("xhr", "fetch"):
-                return
-            ctype = (resp.headers.get("content-type") or "").lower()
-            if "json" in ctype:
-                seen.append((resp.status, resp.url))
-            if API_HINT in resp.url and resp.status == 200:
-                hits.append(resp)
-        except Exception:
-            pass
+        const round2 = v => Math.round((Number(v) || 0) * 100) / 100;
+        const UUID_REGEX = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 
-    page.on("response", on_response)
-    blocked = False
-    meta = {}
-    try:
-        main = page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-        if main is not None and main.status in (403, 429):
-            blocked = True
-        t0 = time.time()
-        while time.time() - t0 < WAIT_FOR_API_S and not hits:
-            page.wait_for_timeout(500)
-        if hits:
-            page.wait_for_timeout(3500)
-        if not hits and re.search(r"access denied|zugriff verweigert", page.title() or "", re.I):
-            blocked = True
+        function fixMojibake(s) {
+            return String(s ?? '')
+                .replace(/StraÃŸe/g, 'Straße')
+                .replace(/GroÃŸes/g, 'Großes')
+                .replace(/Ã€-La-Carte|Ã-La-Carte/gi, 'À-la-Carte')
+                .replace(/GÃ¼ndoÄŸdu/g, 'Gündoğdu')
+                .replace(/KÄ±zÄ±lot/g, 'Kızılot')
+                .replace(/KÄ±zÄ±laÄŸaÃ§/g, 'Kızılağaç')
+                .replace(/Ã‡olaklÄ±/g, 'Çolaklı')
+                .replace(/Ã‡amyuva/g, 'Çamyuva')
+                .replace(/GÃ¶ynÃ¼k/g, 'Göynük')
+                .replace(/TÃ¼rkler/g, 'Türkler')
+                .replace(/BoÄŸazkent/g, 'Boğazkent')
+                .replace(/Ä°ncekum/g, 'İncekum')
+                .replace(/KiriÅŸ/g, 'Kiriş')
+                .replace(/TitreyengÃ¶l/g, 'Titreyengöl')
+                .replace(/KumkÃ¶y/g, 'Kumköy');
+        }
 
-        payloads = []
-        for r in hits:
-            try:
-                payloads.append(r.json())
-            except Exception:
-                pass
+        function hotelByName(name) { return allHotels.find(h => h.name === name); }
 
-        rating, rec, count = "", "", ""
-        try:
-            rating, rec, count = page.evaluate(r"""() => {
-                let ratingText = "", recText = "", countText = "";
-                const reviewBar = document.querySelector('[data-trackid="hotel-review-bar"]') || document.querySelector('.HotelReviewBar');
-                if (reviewBar) {
-                    const text = reviewBar.innerText;
-                    const recMatch = text.match(/(\d{2,3})\s*%/);
-                    if (recMatch) recText = recMatch[1];
-                    const sunMatch = text.match(/([0-9][.,][0-9])\s*\/\s*6/);
-                    if (sunMatch) ratingText = sunMatch[1].replace(',', '.');
-                    const countMatch = text.match(/([\d.]+)\s*Bewertungen/i);
-                    if (countMatch) countText = countMatch[1].replace(/\./g, '');
-                }
-                return [ratingText, recText, countText];
-            }""")
-        except Exception:
-            pass
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
 
-        if need_meta and not blocked:
-            try:
-                raw_meta = page.evaluate(r"""() => {
-                    const h1 = document.querySelector('h1') ? document.querySelector('h1').innerText.trim() : '';
-                    const fullText = document.body ? document.body.innerText : '';
-                    let addressLine = '';
-                    const mapIdx = fullText.indexOf('Auf Karte anzeigen');
-                    if (mapIdx !== -1) {
-                        const chunk = fullText.substring(Math.max(0, mapIdx - 250), mapIdx).trim();
-                        const lines = chunk.split('\n').map(l => l.trim()).filter(Boolean);
-                        if (lines.length > 0) addressLine = lines[lines.length - 1];
+        function debounce(fn, ms = 150) {
+            let t;
+            return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+        }
+        const renderDebounced = debounce(() => render());
+
+        function callWebhook(hotelName, params) {
+            const h = hotelByName(hotelName);
+            const qs = new URLSearchParams({ action: 'update_hotel', ...(h ? { id: h.id } : {}), hotelName, ...params });
+            return fetch(`${WEBHOOK_URL}?${qs}`, { mode: 'no-cors' }).catch(() => {});
+        }
+
+        window.openOffer = function(hotelName, url) {
+            const h = hotelByName(hotelName);
+            if (h) h.views = (h.views || 0) + 1;
+            callWebhook(hotelName, { type: 'view' });
+            window.open(url, '_blank');
+        };
+
+        window.rateHotel = function(hotelName, thumb, btnElement) {
+            const container = btnElement.parentElement;
+            container.querySelectorAll('button').forEach(b => b.style.opacity = '0.4');
+            btnElement.style.opacity = '1';
+            const h = hotelByName(hotelName);
+            if (h) h.dbRating = thumb;
+            callWebhook(hotelName, { type: 'rating', value: thumb });
+        };
+
+        function parseTimeMeta(rawStr, occIndex) {
+            const clean = String(rawStr || '').trim();
+            let y = 2026, m = 1, d = 1, hr = 12, mi = 0, sc = 0;
+            let hasTime = false;
+
+            const isoMatch = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+            const deMatch = clean.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+
+            if (isoMatch) {
+                y = parseInt(isoMatch[1], 10); m = parseInt(isoMatch[2], 10); d = parseInt(isoMatch[3], 10);
+                if (isoMatch[4] !== undefined) { hr = parseInt(isoMatch[4], 10); mi = parseInt(isoMatch[5], 10); sc = isoMatch[6] ? parseInt(isoMatch[6], 10) : 0; hasTime = true; }
+            } else if (deMatch) {
+                d = parseInt(deMatch[1], 10); m = parseInt(deMatch[2], 10); y = parseInt(deMatch[3], 10);
+                if (deMatch[4] !== undefined) { hr = parseInt(deMatch[4], 10); mi = parseInt(deMatch[5], 10); sc = deMatch[6] ? parseInt(deMatch[6], 10) : 0; hasTime = true; }
+            }
+
+            const sortMs = new Date(y, m - 1, d, hr, mi, sc).getTime() + (occIndex * 60000);
+            const dd = String(d).padStart(2, '0');
+            const mm = String(m).padStart(2, '0');
+            const hh = String(hr).padStart(2, '0');
+            const min = String(mi).padStart(2, '0');
+
+            let label = `${dd}.${mm}.`;
+            if (hasTime) label = `${dd}.${mm}. ${hh}:${min}`;
+            else if (occIndex > 0) label = `${dd}.${mm}. (${occIndex + 1}. Scan)`;
+
+            return {
+                hasTime,
+                sortMs,
+                label,
+                fullDate: `${dd}.${mm}.${y}${hasTime ? ', ' + hh + ':' + min + ' Uhr' : (occIndex > 0 ? ' (' + (occIndex + 1) + '. Scan)' : '')}`
+            };
+        }
+
+        window.toggleFilterDrawer = function() {
+            filterDrawerOpen = !filterDrawerOpen;
+            document.getElementById('filterDrawer').classList.toggle('is-open', filterDrawerOpen);
+            document.getElementById('toggleFilterBtn').classList.toggle('active', filterDrawerOpen);
+            document.getElementById('filterArrow').textContent = filterDrawerOpen ? '▴' : '▾';
+        };
+
+        window.toggleChartSection = function() {
+            chartVisible = !chartVisible;
+            document.getElementById('chartSection').classList.toggle('is-open', chartVisible);
+            document.getElementById('toggleChartBtn').classList.toggle('active', chartVisible);
+            document.getElementById('chartArrow').textContent = chartVisible ? '▴' : '▾';
+            if (chartVisible) render();
+        };
+
+        window.setViewMode = function(mode) {
+            viewMode = mode;
+            document.getElementById('viewBtnGrid').classList.toggle('active', mode === 'GRID');
+            document.getElementById('viewBtnMatrix').classList.toggle('active', mode === 'MATRIX');
+            document.getElementById('viewBtnCompare').classList.toggle('active', mode === 'COMPARE');
+            document.getElementById('hotelGrid').style.display = mode === 'GRID' ? 'grid' : 'none';
+            document.getElementById('matrixWrapper').style.display = mode === 'MATRIX' ? 'block' : 'none';
+            document.getElementById('compareWrapper').style.display = mode === 'COMPARE' ? 'block' : 'none';
+            render();
+        };
+
+        window.applyChartPreset = function(preset) {
+            chartPreset = preset;
+            document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+            const activeBtn = document.getElementById('presetBtn' + preset);
+            if (activeBtn) activeBtn.classList.add('active');
+            if (!chartVisible) window.toggleChartSection();
+            else render();
+        };
+
+        window.setChartValueMode = function(mode) {
+            chartValueMode = mode;
+            document.getElementById('modeBtnAbs').classList.toggle('active', mode === 'ABS');
+            document.getElementById('modeBtnDiff').classList.toggle('active', mode === 'DIFF');
+            document.getElementById('modeBtnPct').classList.toggle('active', mode === 'PCT');
+            render();
+        };
+
+        window.clearChartPins = function() {
+            chartPinned = [];
+            localStorage.setItem('chartPinned_2027', JSON.stringify(chartPinned));
+            chartPreset = 'TOP5';
+            applyChartPreset('TOP5');
+        };
+
+        function fetchSheetViaJSONP(sheetId, sheetName, attempt = 1) {
+            return new Promise((resolve, reject) => {
+                const cbName = 'gvizCb_' + Math.floor(Math.random() * 1e9);
+                const script = document.createElement('script');
+                const timer = setTimeout(() => {
+                    cleanup();
+                    if (attempt < 3) {
+                        resolve(fetchSheetViaJSONP(sheetId, sheetName, attempt + 1));
+                    } else {
+                        reject(new Error('Timeout bei ' + sheetName));
                     }
-                    let breadcrumbs = '';
-                    document.querySelectorAll('nav, [aria-label*="readcrumb"], [class*="breadcrumb"]').forEach(el => {
-                        breadcrumbs += ' ' + el.innerText;
+                }, 25000);
+
+                function cleanup() {
+                    clearTimeout(timer);
+                    delete window[cbName];
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                }
+
+                window[cbName] = function(res) {
+                    cleanup();
+                    if (!res || res.status === 'error' || !res.table) {
+                        if (attempt < 3) {
+                            setTimeout(() => resolve(fetchSheetViaJSONP(sheetId, sheetName, attempt + 1)), 1000);
+                        } else {
+                            reject(new Error('Sheet Error: ' + sheetName));
+                        }
+                        return;
+                    }
+
+                    const headers = res.table.cols.map(c => (c.label || '').toLowerCase().trim());
+
+                    const rows = [];
+                    (res.table.rows || []).forEach(r => {
+                        const cells = (r && r.c) ? r.c : [];
+                        const rowVals = [];
+
+                        for (let i = 0; i < headers.length; i++) {
+                            const c = cells[i];
+                            if (!c || (c.v === null && c.f === undefined)) rowVals.push('');
+                            else if (i === 0 && typeof c.v === 'string' && c.v.startsWith('Date(')) {
+                                if (c.f && /\d{1,2}:\d{2}/.test(c.f)) {
+                                    rowVals.push(String(c.f).trim());
+                                } else {
+                                    const m = c.v.match(/Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/);
+                                    if (m) {
+                                        const yr = m[1], mo = String(parseInt(m[2], 10) + 1).padStart(2, '0'), da = String(m[3]).padStart(2, '0');
+                                        const hr = m[4] !== undefined ? parseInt(m[4], 10) : 0, mi = m[5] !== undefined ? parseInt(m[5], 10) : 0;
+                                        rowVals.push((m[4] !== undefined && (hr > 0 || mi > 0)) ? `${yr}-${mo}-${da} ${String(hr).padStart(2, '0')}:${String(mi).padStart(2, '0')}` : (c.f ? String(c.f).trim() : `${yr}-${mo}-${da}`));
+                                    } else rowVals.push(c.f ? String(c.f).trim() : String(c.v).trim());
+                                }
+                            } else if (typeof c.v === 'number') rowVals.push(String(c.v));
+                            else if (c.f !== undefined && c.f !== null) rowVals.push(String(c.f).trim());
+                            else rowVals.push(String(c.v).trim());
+                        }
+                        if (rowVals.some(x => x !== '')) {
+                            if (sheetName === 'hotels' || sheetName === 'user_state') {
+                                let rowObj = {};
+                                headers.forEach((h, idx) => rowObj[h] = rowVals[idx]);
+                                rows.push(rowObj);
+                            } else {
+                                rows.push(rowVals);
+                            }
+                        }
                     });
-                    let stars = '';
-                    let ogImage = '';
-                    const ogEl = document.querySelector('meta[property="og:image"]');
-                    if (ogEl) ogImage = ogEl.getAttribute('content') || '';
-                    document.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
-                        try {
-                            const data = JSON.parse(s.innerText);
-                            const items = Array.isArray(data) ? data : [data];
-                            items.forEach(item => {
-                                if (item.starRating && item.starRating.ratingValue) stars = String(item.starRating.ratingValue);
-                                if (item.address) addressLine += ' ' + JSON.stringify(item.address);
-                            });
-                        } catch(e) {}
-                    });
-                    return { h1, addressLine, breadcrumbs, stars, ogImage, bodyText: fullText.substring(0, 6000) };
-                }""")
-                clean_h1 = re.sub(r"[•★*]+.*$", "", raw_meta.get("h1") or "").strip()
-                clean_h1 = re.sub(r"^(Angebote|Hotelbewertungen)\s+", "", clean_h1, flags=re.I).strip()
-                if clean_h1:
-                    meta["name"] = clean_h1
-                if raw_meta.get("stars"):
-                    meta["stars"] = raw_meta["stars"]
-                else:
-                    meta["stars"] = "5"
-                reg, sub_ort = classify_location(
-                    clean_h1,
-                    raw_meta.get("breadcrumbs", ""),
-                    raw_meta.get("addressLine", ""),
-                    raw_meta.get("bodyText", ""),
-                )
-                meta["region"] = reg
-                if sub_ort:
-                    meta["ort"] = sub_ort
-                meta["tags"] = extract_tags_from_text(raw_meta.get("bodyText", ""))
-                if raw_meta.get("ogImage"):
-                    meta["og_image"] = raw_meta["ogImage"]
-            except Exception:
-                pass
+                    resolve(rows);
+                };
+                script.onerror = function() {
+                    cleanup();
+                    if (attempt < 3) {
+                        setTimeout(() => resolve(fetchSheetViaJSONP(sheetId, sheetName, attempt + 1)), 1000);
+                    } else {
+                        reject(new Error('Network Error: ' + sheetName));
+                    }
+                };
+                script.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=responseHandler:${cbName}&headers=1&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
+                document.body.appendChild(script);
+            });
+        }
 
-        return payloads, blocked, seen, rating, rec, count, meta
-    finally:
-        page.close()
+        function buildHotelUrl(hotel) {
+            if (hotel.rawUrl && hotel.rawUrl.length > 5 && hotel.rawUrl.startsWith('http')) {
+                const baseUrl = hotel.rawUrl.split('?')[0].replace(/\/$/, '');
+                return { url: baseUrl + FMO_SEARCH_QUERY, hasDirectLink: true };
+            }
+            return { url: `https://www.google.com/search?q=site:holidaycheck.de+${encodeURIComponent(hotel.name + " " + hotel.region)}`, hasDirectLink: false };
+        }
 
+        function processDataAndRender(hotelObjects, historyRows, userRows, statusMsg) {
+            const historyByHotel = {};
+            const seenHotelTimeCount = {};
+            const timeRegistry = {};
 
-# ------------------------------ Versand --------------------------------------
-def append_backup(rows: list) -> None:
-    new_file = not BACKUP_CSV.exists()
-    with open(BACKUP_CSV, "a", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        if new_file:
-            w.writerow(["Zeitstempel", "Hotel", "Günstigster_Preis_EUR", "Details"])
-        w.writerows(rows)
+            historyRows.forEach(row => {
+                const rawTime = (row[0] || '').trim();
+                const hName = fixMojibake((row[1] || '').trim());
+                const rawPrice = String(row[2] || '').replace(/[^\d.,-]/g, '').replace(',', '.').trim();
+                const detailsStr = (row[3] || '').trim(); 
 
+                if (!rawTime || !hName || rawTime.toLowerCase().includes('zeitstempel')) return;
 
-def post_rows(rows: list, hotel_updates: list | None = None) -> bool:
-    payload = {"token": WEBHOOK_TOKEN, "rows": rows}
-    if hotel_updates:
-        payload["hotel_updates"] = hotel_updates
+                const pVal = round2(parseFloat(rawPrice));
+                const isValidPrice = !isNaN(pVal) && pVal >= 1000 && pVal <= 20000;
+                if (!isValidPrice) return;
 
-    for i in range(1, 4):
-        try:
-            r = requests.post(WEBHOOK_URL, json=payload, timeout=120)
-            if r.ok and r.text.strip().startswith("ok"):
-                print(f"   ↳ Webhook: {r.text.strip()}")
-                return True
-            print(f"   ↳ Webhook-Antwort: {r.status_code} {r.text.strip()[:120]}")
-        except requests.RequestException as e:
-            print(f"   ↳ Webhook-Fehler: {type(e).__name__}")
-        time.sleep(5 * i)
-    return False
+                const hasClockTime = /\d{1,2}:\d{2}/.test(rawTime);
+                let occIndex = 0;
+                if (!hasClockTime) {
+                    if (!seenHotelTimeCount[hName]) seenHotelTimeCount[hName] = {};
+                    occIndex = seenHotelTimeCount[hName][rawTime] || 0;
+                    seenHotelTimeCount[hName][rawTime] = occIndex + 1;
+                }
 
+                const timeKey = (!hasClockTime && occIndex > 0) ? `${rawTime}__#${occIndex + 1}` : rawTime;
+                if (!timeRegistry[timeKey]) {
+                    const meta = parseTimeMeta(rawTime, occIndex);
+                    timeRegistry[timeKey] = { key: timeKey, rawTime, occIndex, sortMs: meta.sortMs, label: meta.label, fullDate: meta.fullDate, hotelAreas: new Set(), hotelCount: 0 };
+                }
+                if (!timeRegistry[timeKey].hotelAreas.has(hName)) {
+                    timeRegistry[timeKey].hotelAreas.add(hName);
+                    timeRegistry[timeKey].hotelCount++;
+                }
 
-def flush_rows(buffer: list, updates_buffer: list) -> bool:
-    if not buffer and not updates_buffer:
-        return True
-    while buffer or updates_buffer:
-        chunk = buffer[:POST_CHUNK]
-        upd_chunk = list(updates_buffer)
-        if not post_rows(chunk, upd_chunk):
-            return False
-        del buffer[:len(chunk)]
-        updates_buffer.clear()
-    return True
+                if (!historyByHotel[hName]) historyByHotel[hName] = { timeMap: {}, latestRating: null, latestRec: null, latestCount: null };
+                historyByHotel[hName].timeMap[timeKey] = pVal;
 
+                const rMatch = detailsStr.match(/rating=([\d.,]+)/);
+                const cMatch = detailsStr.match(/rec=(\d+)/);
+                const cntMatch = detailsStr.match(/count=(\d+)/);
+                if (rMatch) historyByHotel[hName].latestRating = parseFloat(rMatch[1].replace(',', '.'));
+                if (cMatch) historyByHotel[hName].latestRec = parseInt(cMatch[1]);
+                if (cntMatch) historyByHotel[hName].latestCount = parseInt(cntMatch[1]);
+            });
 
-def verify_webhook_and_push_images(hotels: list[dict]) -> bool:
-    print(f"Teste Webhook-Verbindung ({WEBHOOK_URL[:55]}...) ...")
-    initial_updates = []
-    
-    # Bekannte Hotelketten mit starkem Fokus auf russische Urlauber
-    ru_chains = ["rixos", "granada", "orange county", "justiniano", "lonicera", "dobedan", "alva donna", "kaya", "papillon", "aska", "utopia", "transatlantik", "mirage park", "asteria", "limak", "crystal", "fame residence", "nirvana", "selectum", "sueno", "vonresort", "port nature", "sirene"]
-    
-    for h in hotels:
-        upd = dict(h["auto_update"])
-        if not h["need_page_meta"]:
-            # Check für bekannte Russische Hotels (nur, wenn Spalte noch leer ist)
-            if not h["has_ru_focus"]:
-                if any(chain in h["name"].lower() for chain in ru_chains):
-                    upd["ru_focus"] = "TRUE"
-                    
-            if upd:
-                upd["url"] = h["raw_url"]
-                upd["name"] = h["name"]
-                initial_updates.append(upd)
-            h["auto_update"] = {}
+            const allSortedTimes = Object.values(timeRegistry).sort((a, b) => a.sortMs - b.sortMs);
+            const majorTimes = allSortedTimes.filter(t => t.hotelCount >= 20);
+            globalAllTimes = majorTimes.length > 0 ? majorTimes : allSortedTimes;
+            const lastGlobalTimeKey = globalAllTimes.length > 0 ? globalAllTimes[globalAllTimes.length - 1].key : null;
 
-    if initial_updates:
-        print(f"Sende direkt {len(initial_updates)} Stammdaten-Updates an Google Sheets ...")
-        return post_rows([], initial_updates)
+            if (globalAllTimes.length > 0) {
+                document.getElementById('lastScanTime').innerHTML = `Letzter Tracker-Scan: <span style="color:#60a5fa;">${globalAllTimes[globalAllTimes.length - 1].fullDate}</span>`;
+            } else {
+                document.getElementById('lastScanTime').textContent = "Bisher kein Scan durchgelaufen";
+            }
 
-    try:
-        r = requests.post(WEBHOOK_URL, json={"token": WEBHOOK_TOKEN, "ping": True}, timeout=30)
-        if r.ok and r.text.strip().startswith("ok"):
-            print(f"   ↳ Webhook-Test erfolgreich: {r.text.strip()}\n")
-            return True
-        print(f"   ↳ Webhook-Test FEHLGESCHLAGEN: {r.status_code} {r.text.strip()[:120]}")
-        return False
-    except requests.RequestException as e:
-        print(f"   ↳ Webhook-Test Netzwerkfehler: {e}")
-        return False
+            const userById = {};
+            userRows.forEach(u => {
+                const uid = String(u['id'] || '').trim();
+                if (!uid || uid.toLowerCase() === 'id') return;
+                const favRaw = String(u['favorite'] ?? '').trim().toUpperCase();
+                const ratingRaw = String(u['rating'] || '').trim();
+                userById[uid] = {
+                    views: parseInt(u['views'], 10) || 0,
+                    rating: (ratingRaw === '👍' || ratingRaw === '👎') ? ratingRaw : '',
+                    favorite: favRaw === 'TRUE' || favRaw === '1'
+                };
+            });
 
+            const dedupedHotels = [];
+            const seenByName = new Map();
+            const seenByUuid = new Map();
 
-# ------------------------------ Modi -----------------------------------------
-def mode_setup():
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        ctx = open_context(p, show=True)
-        page = ctx.new_page()
-        page.goto("https://www.holidaycheck.de/", timeout=60_000)
-        input("Cookie-Banner bestätigen. Dann hier ENTER drücken ... ")
-        ctx.close()
+            hotelObjects.forEach(rowObj => {
+                const id = (rowObj['id'] || '').trim();
+                const name = fixMojibake((rowObj['name'] || '').trim());
+                if (!id || !name || id.toLowerCase() === 'id') return;
 
+                const activeRaw = String(rowObj['active'] ?? 'true').trim().toLowerCase();
+                if (!['true', '1', 'ja', 'yes', 'wahr'].includes(activeRaw)) return;
 
-def mode_probe(hotels, show: bool):
-    from playwright.sync_api import sync_playwright
-    h = hotels[0]
-    print(f"PROBE mit: {h['name']}\n{h['scrape_url']}\n")
-    with sync_playwright() as p:
-        ctx = open_context(p, show)
-        payloads, blocked, seen, rating, rec, count, meta = fetch_offers(ctx, h["scrape_url"], need_meta=True)
-        ctx.close()
-    print(f"Blockiert: {blocked}")
-    print(f"Bewertung: {rating} / 6 | {rec}% | {count} Reviews")
-    print(f"Erkannte Stammdaten: {meta}")
-    price, details = extract_price(payloads)
-    print(f"Preis (extract_price): {price} [{details}] | Status: {classify_failure(payloads, blocked) if price is None else 'ok'}")
-    DEBUG_DIR.mkdir(exist_ok=True)
-    out = DEBUG_DIR / "probe_payloads.json"
-    out.write_text(json.dumps(payloads, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Rohdaten gespeichert: {out} ({len(payloads)} API-Antworten)")
+                const region = fixMojibake((rowObj['region'] || '').trim()) || 'Sonstige';
+                const ort = fixMojibake((rowObj['ort'] || '').trim());
+                
+                const ruFocusRaw = String(rowObj['ru_focus'] || '').trim().toLowerCase();
+                const ruFocus = ['true', '1', 'ja', 'yes', 'wahr'].includes(ruFocusRaw);
 
+                let stars = parseFloat(String(rowObj['stars'] || '5').replace(',', '.')) || 5;
+                if (stars > 5 && stars <= 50) stars = stars / 10;
+                stars = Math.min(5, Math.max(1, stars));
 
-def mode_run(hotels, show: bool) -> int:
-    from playwright.sync_api import sync_playwright
+                const rawTags = fixMojibake((rowObj['tags'] || '').trim());
+                const tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [];
+                const rawUrl = (rowObj['url'] || '').trim();
 
-    if not verify_webhook_and_push_images(hotels):
-        print("ABBRUCH VOR START: Bitte Google Apps Script als 'Neue Version' bereitstellen!")
-        return 2
+                const uuidMatch = rawUrl.match(UUID_REGEX);
+                const hcUuid = uuidMatch ? uuidMatch[1].toLowerCase() : '';
 
-    ts = berlin_now().strftime("%Y-%m-%d %H:%M")
-    buffer: list = []
-    updates_buffer: list = []
-    stats: dict = defaultdict(int)
-    consecutive = 0
-    aborted = False
-    post_ok = True
-    
-    ru_chains = ["rixos", "granada", "orange county", "justiniano", "lonicera", "dobedan", "alva donna", "kaya", "papillon", "aska", "utopia", "transatlantik", "mirage park", "asteria", "limak", "crystal", "fame residence", "nirvana", "selectum", "sueno", "vonresort", "port nature", "sirene"]
+                let image = (rowObj['image'] || '').trim();
+                if (!image && hcUuid && hcUuid !== '00000000-0000-0000-0000-000000000000') {
+                    image = `https://www.holidaycheck.de/main-photo-redirect/${hcUuid}/w_640,h_480,c_fill,q_auto,f_auto`;
+                }
 
-    with sync_playwright() as p:
-        ctx = open_context(p, show)
-        try:
-            for i, h in enumerate(hotels, 1):
-                name = h["name"]
-                scrape_url = h["scrape_url"]
-                need_meta = h["need_page_meta"]
+                const nameKey = name.toLowerCase();
+                const existing = seenByName.get(nameKey) || (hcUuid ? seenByUuid.get(hcUuid) : null);
 
-                print(f"[{i}/{len(hotels)}] {name} ... ", end="", flush=True)
-                price, details, status = None, "", ""
-                payloads, blocked = [], False
-                rating = rec = count = ""
-                meta = {}
+                if (existing) {
+                    if (!existing.image && image) existing.image = image;
+                    if (!existing.ort && ort) existing.ort = ort;
+                    if (!existing.ruFocus && ruFocus) existing.ruFocus = true;
+                    if ((!existing.rawUrl || !existing.rawUrl.startsWith('http')) && rawUrl.startsWith('http')) existing.rawUrl = rawUrl;
+                    if (tags.length > existing.tags.length) existing.tags = tags;
+                    return;
+                }
 
-                for attempt in (1, 2):
-                    try:
-                        payloads, blocked, _, rating, rec, count, meta = fetch_offers(
-                            ctx, scrape_url, need_meta=need_meta
-                        )
-                        price, details = extract_price(payloads)
-                        status = ""
-                        if price is not None or blocked:
-                            break
-                    except Exception as e:
-                        payloads, blocked = [], False
-                        status = f"error:{type(e).__name__}"
-                    time.sleep(random.uniform(2, 4))
+                const entry = {
+                    id, name, region, ort, stars, tags, rawUrl, image, ruFocus,
+                    hc_rating: rowObj['hc_rating'],
+                    hc_rec: rowObj['hc_rec']
+                };
+                dedupedHotels.push(entry);
+                seenByName.set(nameKey, entry);
+                if (hcUuid) seenByUuid.set(hcUuid, entry);
+            });
 
-                upd = dict(h["auto_update"])
-                if not h["has_name"] and meta.get("name"):
-                    name = meta["name"]
-                    upd["name"] = name
-                if not h["has_region"] and meta.get("region"):
-                    upd["region"] = meta["region"]
-                if not h["has_ort"] and meta.get("ort"):
-                    upd["ort"] = meta["ort"]
-                if not h["has_stars"] and meta.get("stars"):
-                    upd["stars"] = meta["stars"]
-                if not h["has_tags"] and meta.get("tags"):
-                    upd["tags"] = meta["tags"]
-                if "image" not in upd and meta.get("og_image"):
-                    upd["image"] = meta["og_image"]
-                    
-                # Auto-Erkennung für neue Hotels
-                if not h["has_ru_focus"]:
-                    if any(chain in name.lower() for chain in ru_chains):
-                        upd["ru_focus"] = "TRUE"
+            const tagsSet = new Set();
+            allHotels = [];
+            favorites = [];
 
-                if upd:
-                    upd["url"] = h["raw_url"]
-                    if not upd.get("name"):
-                        upd["name"] = name
-                    updates_buffer.append(upd)
+            dedupedHotels.forEach(entry => {
+                const { id, name, region, ort, stars, tags, rawUrl, image, ruFocus } = entry;
 
-                if price is not None:
-                    row = [ts, name, price, build_details(details, rating, rec, count)]
-                    stats["ok"] += 1
-                    consecutive = 0
-                    print(f"{price:.2f} EUR")
-                else:
-                    status = status or classify_failure(payloads, blocked)
-                    row = [ts, name, "", build_details(f"status={status}", rating, rec, count)]
-                    stats[status.split(":")[0]] += 1
-                    consecutive = 0 if status == "no_offer" else consecutive + 1
-                    print(status)
+                const user = userById[id] || { views: 0, rating: '', favorite: false };
+                const views = user.views;
+                const dbRating = user.rating;
+                if (user.favorite) favorites.push(name);
 
-                append_backup([row])
-                buffer.append(row)
+                const staticRatingStr = (entry.hc_rating || '').toString().replace(',', '.').trim();
+                const staticRating = parseFloat(staticRatingStr) || null;
+                const staticRecStr = (entry.hc_rec || '').toString().replace('%', '').trim();
+                const staticRec = parseInt(staticRecStr) || null;
 
-                if consecutive >= MAX_CONSECUTIVE_FAILS:
-                    print(f"\nAbbruch: {consecutive} Fehlschläge in Folge")
-                    aborted = True
-                    break
+                const histData = historyByHotel[name] || {};
+                const timeMap = histData.timeMap || {};
 
-                time.sleep(random.uniform(*PAUSE_HOTEL))
-                if i % FLUSH_EVERY == 0:
-                    post_ok = flush_rows(buffer, updates_buffer) and post_ok
-                    time.sleep(random.uniform(*PAUSE_BLOCK))
-        finally:
-            ctx.close()
+                const rating = (histData.latestRating !== null && histData.latestRating !== undefined) ? histData.latestRating : staticRating;
+                const recommendation = (histData.latestRec !== null && histData.latestRec !== undefined) ? histData.latestRec : staticRec;
+                const reviewCount = (histData.latestCount !== null && histData.latestCount !== undefined) ? histData.latestCount : null;
 
-    post_ok = flush_rows(buffer, updates_buffer) and post_ok
-    print("\nZusammenfassung:", dict(stats))
-    if not post_ok:
-        print(f"Webhook-Versand unvollständig – alle Zeilen liegen in {BACKUP_CSV}")
-        return 2
-    if aborted:
-        return 3
-    return 0 if stats["ok"] > 0 else 1
+                const chronoPoints = [];
+                allSortedTimes.forEach(tObj => {
+                    if (timeMap[tObj.key] !== undefined && timeMap[tObj.key] !== null) {
+                        chronoPoints.push({ timeKey: tObj.key, label: tObj.label, fullDate: tObj.fullDate, price: timeMap[tObj.key] });
+                    }
+                });
 
+                const valid = chronoPoints.map(p => p.price);
+                const current = (lastGlobalTimeKey && timeMap[lastGlobalTimeKey] !== undefined) ? timeMap[lastGlobalTimeKey] : null;
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--setup", action="store_true")
-    ap.add_argument("--probe", action="store_true")
-    ap.add_argument("--show", action="store_true")
-    ap.add_argument("--limit", type=int, default=0)
-    args, _ = ap.parse_known_args()
+                const prev = valid.length > 1 ? valid[valid.length - 2] : null;
+                const first = valid.length > 0 ? valid[0] : null;
+                const min = valid.length > 0 ? round2(Math.min(...valid)) : null;
+                const max = valid.length > 0 ? round2(Math.max(...valid)) : null;
+                const avg = valid.length > 0 ? Math.round(valid.reduce((s, v) => s + v, 0) / valid.length) : null;
+                const diffPrev = (current !== null && prev !== null) ? round2(current - prev) : 0;
+                const diffFromMax = (current !== null && max !== null) ? round2(current - max) : 0;
+                const spread = (min !== null && max !== null) ? round2(max - min) : 0;
 
-    if args.setup:
-        return mode_setup() or 0
-    hotels = load_hotels(None)
-    if args.limit:
-        hotels = hotels[: args.limit]
-    if not hotels:
-        return 1
-    if args.probe:
-        return mode_probe(hotels, args.show) or 0
-    return mode_run(hotels, args.show)
+                tags.forEach(t => tagsSet.add(t));
 
+                allHotels.push({
+                    id, name, region, ort, stars, tags, rating, recommendation, reviewCount,
+                    image, views, dbRating, ruFocus,
+                    url: buildHotelUrl({ name, region, rawUrl }).url,
+                    hasDirectLink: buildHotelUrl({ name, region, rawUrl }).hasDirectLink,
+                    currentPrice: current, prevPrice: prev, firstPrice: first,
+                    minPrice: min, maxPrice: max, avgPrice: avg,
+                    diffPrev, diffFromMax, spread, timeMap, chronoPoints
+                });
+            });
 
-if __name__ == "__main__":
-    sys.exit(main())
+            buildRegionTabs();
+
+            const tagsCloud = document.getElementById('tagsCloud');
+            tagsCloud.innerHTML = '';
+            Array.from(tagsSet).sort().forEach(tag => {
+                if(tag.toLowerCase() === 'newcomer' || tag.toLowerCase() === 'neu') return;
+                const chip = document.createElement('div');
+                chip.className = 'tag-filter' + (activeTag === tag ? ' active' : '');
+                chip.textContent = tag;
+                chip.addEventListener('click', () => {
+                    activeTag = (activeTag === tag) ? null : tag;
+                    document.querySelectorAll('.tag-filter').forEach(c => c.classList.toggle('active', c.textContent === activeTag));
+                    render();
+                });
+                tagsCloud.appendChild(chip);
+            });
+
+            if (!listenersInitialized) { setupEventListeners(); listenersInitialized = true; }
+            render(statusMsg);
+        }
+
+        function buildRegionTabs() {
+            const counts = { ALL: allHotels.length };
+            allHotels.forEach(h => { counts[h.region] = (counts[h.region] || 0) + 1; });
+            const container = document.getElementById('regionTabs');
+            container.innerHTML = '';
+            const regions = ['ALL', ...Object.keys(counts).filter(r => r !== 'ALL').sort()];
+            regions.forEach(reg => {
+                const tab = document.createElement('div');
+                tab.className = 'region-tab' + (activeRegion === reg ? ' active' : '');
+                tab.innerHTML = `<span>${reg === 'ALL' ? '🌍 Alle' : `📍 ${esc(reg)}`}</span><span class="region-count">${counts[reg]}</span>`;
+                tab.addEventListener('click', () => { activeRegion = reg; buildRegionTabs(); render(); });
+                container.appendChild(tab);
+            });
+        }
+
+        async function init() {
+            try {
+                let historyFailed = false, userFailed = false;
+                const [liveHotels, liveHistory, liveUsers] = await Promise.all([
+                    fetchSheetViaJSONP(SPREADSHEET_ID, 'hotels'),
+                    fetchSheetViaJSONP(SPREADSHEET_ID, 'preishistorie').catch(() => { historyFailed = true; return []; }),
+                    fetchSheetViaJSONP(SPREADSHEET_ID, 'user_state').catch(() => { userFailed = true; return []; })
+                ]);
+                if (liveHotels && liveHotels.length > 0) {
+                    const problems = [];
+                    if (historyFailed) problems.push('Preishistorie');
+                    if (userFailed) problems.push('Favoriten/Bewertungen');
+                    const statusMsg = problems.length > 0 ? `🟠 ${problems.join(' + ')} nicht geladen – bitte neu laden` : "🟢 Live verbunden";
+                    processDataAndRender(liveHotels, liveHistory, liveUsers, statusMsg);
+                    document.getElementById('syncStatus').style.background = problems.length > 0 ? "rgba(217, 119, 6, 0.45)" : "rgba(5, 150, 105, 0.35)";
+                }
+            } catch (e) {
+                document.getElementById('syncStatus').textContent = "⚠️ Ladefehler";
+                document.getElementById('syncStatus').style.background = "rgba(220, 38, 38, 0.3)";
+            }
+        }
+
+        function setupEventListeners() {
+            document.getElementById('searchInput').addEventListener('input', renderDebounced);
+            document.getElementById('sortSelect').addEventListener('change', () => render());
+            document.getElementById('starsSelect').addEventListener('change', () => render());
+            document.getElementById('recSelect').addEventListener('change', () => render());
+
+            document.getElementById('budgetSlider').addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                document.getElementById('budgetVal').textContent = val >= 3600 ? 'Alle' : `bis ${val} €`;
+                renderDebounced();
+            });
+
+            document.getElementById('quickFavBtn').addEventListener('click', (e) => { onlyFavs = !onlyFavs; e.currentTarget.classList.toggle('fav-active', onlyFavs); render(); });
+            document.getElementById('quickRuBtn').addEventListener('click', (e) => { onlyRu = !onlyRu; e.currentTarget.classList.toggle('active', onlyRu); render(); });
+            document.getElementById('quickNewBtn').addEventListener('click', (e) => { onlyNewcomers = !onlyNewcomers; e.currentTarget.classList.toggle('new-active', onlyNewcomers); render(); });
+            document.getElementById('quickWithPriceBtn').addEventListener('click', (e) => { onlyWithPrice = !onlyWithPrice; e.currentTarget.classList.toggle('active', onlyWithPrice); render(); });
+            document.getElementById('quick2kBtn').addEventListener('click', (e) => {
+                onlyUnder2k = !onlyUnder2k; e.currentTarget.classList.toggle('active', onlyUnder2k);
+                document.getElementById('budgetSlider').value = onlyUnder2k ? 2000 : 3600;
+                document.getElementById('budgetVal').textContent = onlyUnder2k ? 'bis 2000 €' : 'Alle';
+                render();
+            });
+            document.getElementById('quickSwimBtn').addEventListener('click', (e) => { onlySwimUp = !onlySwimUp; e.currentTarget.classList.toggle('active', onlySwimUp); render(); });
+            document.getElementById('quickBeachBtn').addEventListener('click', (e) => { onlyBeach = !onlyBeach; e.currentTarget.classList.toggle('active', onlyBeach); render(); });
+
+            document.getElementById('resetFiltersBtn').addEventListener('click', () => {
+                document.getElementById('searchInput').value = '';
+                document.getElementById('starsSelect').value = '0';
+                document.getElementById('recSelect').value = '0';
+                document.getElementById('budgetSlider').value = 3600;
+                document.getElementById('budgetVal').textContent = 'Alle';
+                activeRegion = 'ALL'; activeTag = null; onlyFavs = false; onlyRu = false; onlyWithPrice = false; onlyUnder2k = false; onlySwimUp = false; onlyBeach = false; onlyNewcomers = false;
+                document.querySelectorAll('.chip-quick').forEach(c => c.classList.remove('active', 'fav-active', 'new-active'));
+                document.querySelectorAll('.tag-filter').forEach(c => c.classList.remove('active'));
+                buildRegionTabs(); render();
+            });
+        }
+
+        window.toggleFav = function(hotelName, ev, btnElement) {
+            if (ev) ev.stopPropagation();
+            const nowFav = !favorites.includes(hotelName);
+            favorites = nowFav ? [...favorites, hotelName] : favorites.filter(n => n !== hotelName);
+            if (btnElement) btnElement.textContent = nowFav ? '❤️' : '🤍';
+            callWebhook(hotelName, { type: 'favorite', value: nowFav ? '1' : '0' });
+            render();
+        };
+
+        window.toggleChartPin = function(hotelName, ev) {
+            if (ev) ev.stopPropagation();
+            if (chartPinned.includes(hotelName)) chartPinned = chartPinned.filter(n => n !== hotelName);
+            else chartPinned.push(hotelName);
+            localStorage.setItem('chartPinned_2027', JSON.stringify(chartPinned));
+            chartPreset = chartPinned.length > 0 ? 'PINNED' : 'TOP5';
+            applyChartPreset(chartPreset);
+        };
+
+        function getBadgeHTML(h) {
+            if (!h.recommendation && !h.rating) return '';
+            let html = `<div class="hc-badges">`;
+            if (h.recommendation) html += `<div class="hc-rec">👍 ${h.recommendation}%</div>`;
+            if (h.rating) html += `<div class="hc-rat"><span class="hc-sun">☀️</span> ${h.rating.toFixed(1).replace('.', ',')} / 6</div>`;
+            if (h.reviewCount) html += `<div class="hc-cnt" style="background:#ffffff; color:#64748b; font-weight:700; font-size:11px; padding:3px 7px; border-left:1px solid var(--border); white-space:nowrap;">(${h.reviewCount.toLocaleString('de-DE')})</div>`;
+            html += `</div>`;
+            return html;
+        }
+
+        function render(statusOverride) {
+            const search = document.getElementById('searchInput').value.toLowerCase().trim();
+            const sortMode = document.getElementById('sortSelect').value;
+            const minStars = parseFloat(document.getElementById('starsSelect').value) || 0;
+            const minRec = parseInt(document.getElementById('recSelect').value) || 0;
+            const maxBudget = parseInt(document.getElementById('budgetSlider').value);
+
+            let filtered = allHotels.filter(h => {
+                if (activeRegion !== 'ALL' && h.region !== activeRegion) return false;
+                if (minStars > 0 && h.stars < minStars) return false;
+                if (minRec > 0 && (h.recommendation === null || h.recommendation < minRec)) return false;
+                if (search && !h.name.toLowerCase().includes(search) && !h.ort.toLowerCase().includes(search) && !h.region.toLowerCase().includes(search) && !h.tags.some(t => t.toLowerCase().includes(search))) return false;
+                if (activeTag && !h.tags.includes(activeTag)) return false;
+                if (onlyFavs && !favorites.includes(h.name)) return false;
+                if (onlyRu && !h.ruFocus) return false;
+                if (onlyNewcomers && !h.tags.some(t => t.toLowerCase() === 'newcomer' || t.toLowerCase() === 'neu')) return false;
+                if (onlyWithPrice && h.currentPrice === null) return false;
+                if (onlySwimUp && !h.tags.some(t => t.toLowerCase().includes('swim'))) return false;
+                if (onlyBeach && !h.tags.some(t => t.toLowerCase().includes('strand'))) return false;
+                if (maxBudget < 3600 && h.currentPrice !== null && h.currentPrice > maxBudget) return false;
+                return true;
+            });
+
+            filtered.sort((a, b) => {
+                if (sortMode === 'FAV_FIRST') {
+                    const aFav = favorites.includes(a.name) ? 0 : 1, bFav = favorites.includes(b.name) ? 0 : 1;
+                    if (aFav !== bFav) return aFav - bFav;
+                }
+                if (sortMode === 'NAME_ASC') return a.name.localeCompare(b.name);
+
+                if (sortMode === 'RATING_DESC') {
+                    const rA = a.rating || 0, rB = b.rating || 0;
+                    if (rA !== rB) return rB - rA;
+                    return (b.recommendation || 0) - (a.recommendation || 0);
+                }
+
+                if (a.currentPrice === null && b.currentPrice === null) return a.name.localeCompare(b.name);
+                if (a.currentPrice === null) return 1;
+                if (b.currentPrice === null) return -1;
+
+                if (sortMode === 'PRICE_ASC' || sortMode === 'FAV_FIRST') return a.currentPrice - b.currentPrice;
+                if (sortMode === 'PRICE_DESC') return b.currentPrice - a.currentPrice;
+                if (sortMode === 'DROP_DESC') return a.diffPrev - b.diffPrev;
+                if (sortMode === 'DEAL_DESC') return a.diffFromMax - b.diffFromMax;
+                if (sortMode === 'VOLATILE_DESC') return b.spread - a.spread;
+                return 0;
+            });
+
+            const withPriceAll = allHotels.filter(h => h.currentPrice !== null);
+            const newcomerAll = allHotels.filter(h => h.tags.some(t => t.toLowerCase() === 'newcomer' || t.toLowerCase() === 'neu'));
+
+            document.getElementById('kpiCount').textContent = `${filtered.length} / ${allHotels.length}`;
+            document.getElementById('kpiActiveSub').textContent = `${withPriceAll.length} aktuell buchbar`;
+            if (statusOverride) document.getElementById('syncStatus').innerHTML = `<span>${statusOverride}</span>`;
+            document.getElementById('kpiFavs').textContent = favorites.length;
+            document.getElementById('favQuickCount').textContent = favorites.length;
+            document.getElementById('newCount').textContent = newcomerAll.length;
+            document.getElementById('quickNewBtn').style.display = newcomerAll.length > 0 ? 'flex' : 'none';
+            document.getElementById('pinCountLabel').textContent = chartPinned.length;
+            document.getElementById('clearPinsBtn').style.display = chartPinned.length > 0 ? 'inline-block' : 'none';
+
+            const withPrice = filtered.filter(h => h.currentPrice !== null);
+            if (withPrice.length > 0) {
+                const cheapest = [...withPrice].sort((a, b) => a.currentPrice - b.currentPrice)[0];
+                document.getElementById('kpiBestPrice').textContent = `${cheapest.currentPrice} €`;
+                document.getElementById('kpiBestHotel').textContent = cheapest.name;
+                document.getElementById('kpiBestCard').onclick = () => openHotelModal(cheapest.name);
+
+                const bestDrop = [...withPrice].sort((a, b) => a.diffPrev - b.diffPrev)[0];
+                if (bestDrop.diffPrev < 0) {
+                    document.getElementById('kpiBestDrop').textContent = `${round2(bestDrop.diffPrev)} €`;
+                    document.getElementById('kpiDropHotel').textContent = bestDrop.name;
+                    document.getElementById('kpiDropCard').onclick = () => openHotelModal(bestDrop.name);
+                } else {
+                    document.getElementById('kpiBestDrop').textContent = `±0 €`;
+                    document.getElementById('kpiDropHotel').textContent = `Keine Senkung zum Vortag`;
+                }
+
+                const bestDeal = [...withPrice].sort((a, b) => a.diffFromMax - b.diffFromMax)[0];
+                if (bestDeal.diffFromMax < 0) {
+                    document.getElementById('kpiPeakDrop').textContent = `${round2(bestDeal.diffFromMax)} €`;
+                    document.getElementById('kpiPeakHotel').textContent = bestDeal.name;
+                } else {
+                    document.getElementById('kpiPeakDrop').textContent = `±0 €`;
+                    document.getElementById('kpiPeakHotel').textContent = `Alle auf Höchststand`;
+                }
+            } else {
+                document.getElementById('kpiBestPrice').textContent = '-';
+                document.getElementById('kpiBestHotel').textContent = 'Keine Preise in Ansicht';
+            }
+
+            document.getElementById('resultsText').textContent = `${filtered.length} passende Hotels gefunden`;
+
+            if (viewMode === 'GRID') renderGrid(filtered);
+            else if (viewMode === 'MATRIX') renderMatrix(filtered);
+            else if (viewMode === 'COMPARE') renderCompare(filtered);
+
+            if (chartVisible) updateChart(filtered);
+        }
+
+        function renderGrid(filtered) {
+            const grid = document.getElementById('hotelGrid');
+            grid.innerHTML = '';
+            if (filtered.length === 0) { grid.innerHTML = `<div class="empty-state">Keine Hotels für diese Filter gefunden. Klicke auf „Filter zurücksetzen“!</div>`; return; }
+
+            filtered.forEach(h => {
+                const isFav = favorites.includes(h.name);
+                const isPinned = chartPinned.includes(h.name);
+                const safeName = h.name.replace(/'/g, "\\'");
+                const isNewcomer = h.tags.some(t => t.toLowerCase() === 'newcomer' || t.toLowerCase() === 'neu');
+                const isSoldOut = h.currentPrice === null;
+                const ruBadge = h.ruFocus ? `<span style="font-size:16px; margin-left:6px; vertical-align:middle;" title="Sehr beliebt bei russischen Gästen">🇷🇺</span>` : '';
+
+                let budgetClass = '';
+                if (!isSoldOut) {
+                    if (h.currentPrice <= 1850) budgetClass = 'in-budget';
+                    else if (h.currentPrice <= 2100) budgetClass = 'near-budget';
+                    else budgetClass = 'over-budget';
+                }
+
+                let trendHTML = '';
+                if (!isSoldOut && h.prevPrice !== null) {
+                    if (h.diffPrev < 0) trendHTML = `<span class="trend down">↘ ${round2(h.diffPrev)} €</span>`;
+                    else if (h.diffPrev > 0) trendHTML = `<span class="trend up">↗ +${round2(h.diffPrev)} €</span>`;
+                    else trendHTML = `<span class="trend same">→ ±0 €</span>`;
+                }
+
+                let allTimeBadge = (!isSoldOut && h.minPrice !== null && h.currentPrice <= h.minPrice)
+                    ? `<span class="alltime-badge">🔥 Bestpreis</span>` : ((!isSoldOut && h.diffFromMax <= -30) ? `<span class="alltime-badge" style="background:#dcfce7;color:#15803d;">💎 ${round2(h.diffFromMax)} € v. Hoch</span>` : '');
+
+                const tagsHTML = h.tags.map(t => {
+                    const low = t.toLowerCase();
+                    if(low === 'newcomer' || low === 'neu') return '';
+                    const extraClass = low.includes('swim') ? 'swimup' : (low.includes('strand') ? 'strand' : '');
+                    return `<span class="tag-badge ${extraClass}">${esc(t)}</span>`;
+                }).join('');
+
+                let rangePos = 50;
+                if (!isSoldOut && h.minPrice !== null && h.maxPrice !== null && h.maxPrice > h.minPrice) rangePos = Math.round(((h.currentPrice - h.minPrice) / (h.maxPrice - h.minPrice)) * 100);
+                else if (!isSoldOut) rangePos = 15;
+
+                const linkStatusBadge = !h.hasDirectLink ? `<div class="missing-link-badge">⚠️ Kein Direktlink in Sheets</div>` : '';
+                const btnLabel = h.hasDirectLink ? 'Zum Angebot ↗' : 'Suchen 🔍';
+                const btnClass = h.hasDirectLink ? 'offer-btn' : 'offer-btn search-fallback';
+
+                const newcomerHTML = isNewcomer ? `<span class="newcomer-badge">🌟 Neu</span>` : '';
+
+                const card = document.createElement('div');
+                card.className = `card ${budgetClass} ${isSoldOut ? 'sold-out' : ''}`;
+
+                card.innerHTML = `
+                    <div style="position:relative;">
+                        <div class="card-actions-top">
+                            <button class="icon-btn ${isPinned ? 'chart-active' : ''}" onclick="toggleChartPin('${safeName}', event)" title="Im Diagramm anheften">📈</button>
+                            <button class="icon-btn ${isFav ? 'fav-active' : ''}" onclick="toggleFav('${safeName}', event, this)" title="Als Favorit speichern">${isFav ? '❤️' : '🤍'}</button>
+                        </div>
+                        
+                        <div class="hotel-card-header">${h.image ? `<img class="hc-bg" src="${esc(h.image)}" loading="lazy" decoding="async" alt="">` : ''}
+                            <div class="card-title" onclick="openHotelModal('${safeName}')">${esc(h.name)} <span class="stars">${'★'.repeat(Math.min(5, Math.floor(h.stars)))}</span>${ruBadge} ${newcomerHTML}</div>
+                            <div class="location-badge" style="color:#e2e8f0; margin-bottom:0;">📍 ${esc(h.region)}${h.ort ? ' • ' + esc(h.ort) : ''}</div>
+                        </div>
+
+                        <div class="interaction-bar">
+                            <span>👁️ ${h.views || 0}x angesehen</span>
+                            <div>
+                                <button onclick="rateHotel('${safeName}', '👍', this)" style="opacity: ${h.dbRating === '👍' ? '1' : '0.4'}">👍</button>
+                                <button onclick="rateHotel('${safeName}', '👎', this)" style="opacity: ${h.dbRating === '👎' ? '1' : '0.4'}">👎</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card-body">
+                        <div>
+                            ${getBadgeHTML(h)}
+                            ${linkStatusBadge}
+                            <div class="tags-wrap">${tagsHTML}</div>
+                        </div>
+                        
+                        <div>
+                            <div class="price-section" onclick="openHotelModal('${safeName}')" title="Klicken für Einzel-Graph & komplette Preishistorie">
+                                <div class="price-row">
+                                    <div class="price-tag ${!isSoldOut && h.currentPrice <= 2000 ? 'green' : ''} ${isSoldOut ? 'waiting' : ''}">${!isSoldOut ? h.currentPrice + ' €' : 'Zzt. nicht buchbar'}</div>
+                                    <div class="badges-right">${allTimeBadge}${trendHTML}</div>
+                                </div>
+                                ${!isSoldOut ? `
+                                <div class="range-bar-wrap">
+                                    <div class="range-track">
+                                        <div class="range-fill" style="width:100%"></div>
+                                        <div class="range-marker" style="left:${rangePos}%"></div>
+                                    </div>
+                                </div>` : ''}
+                                <div class="meta-stats">
+                                    <span>Tief: <b>${h.minPrice ? h.minPrice + ' €' : '-'}</b> • Hoch: <b>${h.maxPrice ? h.maxPrice + ' €' : '-'}</b></span>
+                                    <span class="analyze-hint">🔍 Verlauf</span>
+                                </div>
+                            </div>
+                            <div class="btn-row">
+                                <button class="btn-detail" onclick="openHotelModal('${safeName}')">📊 Analyse</button>
+                                <button class="${btnClass}" onclick="openOffer('${safeName}', '${esc(h.url)}')">${btnLabel}</button>
+                            </div>
+                        </div>
+                    </div>`;
+                grid.appendChild(card);
+            });
+        }
+
+        function renderMatrix(filtered) {
+            const table = document.getElementById('matrixTable');
+            let matrixTimes = globalAllTimes.slice(-8);
+
+            let thead = `<thead><tr>
+                <th>Hotel</th>
+                <th style="text-align:right;">Aktuell</th>
+                <th style="text-align:right;">Tief / Hoch</th>
+                <th>Potenzial / Status</th>
+                ${matrixTimes.map(t => `<th style="text-align:right;">${t.label}</th>`).join('')}
+            </tr></thead>`;
+
+            let tbody = '<tbody>';
+            filtered.forEach(h => {
+                const safeName = h.name.replace(/'/g, "\\'");
+                const isSoldOut = h.currentPrice === null;
+                const ruBadge = h.ruFocus ? `<span style="font-size:14px; margin-left:4px;" title="Sehr beliebt bei russischen Gästen">🇷🇺</span>` : '';
+
+                let statusBadge = '-';
+                if (!isSoldOut) {
+                    if (h.currentPrice <= h.minPrice) statusBadge = `<span class="alltime-badge">🔥 Am Tiefstpreis</span>`;
+                    else statusBadge = `<span style="font-size:11px; color:#b45309; font-weight:700;">+${round2(h.currentPrice - h.minPrice)} € über Tief</span>`;
+                }
+
+                let prevCellPrice = null;
+                const timeCells = matrixTimes.map(t => {
+                    const p = h.timeMap[t.key];
+                    if (p === undefined || p === null) return `<td class="heat-cell" style="color:#cbd5e1;">-</td>`;
+                    let cls = 'heat-cell', deltaHtml = '';
+                    if (prevCellPrice !== null) {
+                        const d = round2(p - prevCellPrice);
+                        if (d < 0) { cls += ' heat-down'; deltaHtml = `<span class="heat-delta">↘ ${d} €</span>`; }
+                        else if (d > 0) { cls += ' heat-up'; deltaHtml = `<span class="heat-delta">↗ +${d} €</span>`; }
+                        else { deltaHtml = `<span class="heat-delta" style="color:#94a3b8;">±0 €</span>`; }
+                    }
+                    if (h.minPrice !== null && p === h.minPrice) cls += ' heat-low';
+                    prevCellPrice = p;
+                    return `<td class="${cls}">${p} €${deltaHtml}</td>`;
+                }).join('');
+
+                tbody += `<tr onclick="openHotelModal('${safeName}')" style="cursor:pointer; ${isSoldOut ? 'opacity:0.6;' : ''}">
+                    <td class="matrix-hotel-cell">
+                        <span onclick="toggleFav('${safeName}', event, this)" style="margin-right:4px;">${favorites.includes(h.name) ? '❤️' : '🤍'}</span>
+                        <span onclick="toggleChartPin('${safeName}', event)" style="margin-right:6px; opacity:${chartPinned.includes(h.name) ? 1 : 0.45};">📈</span>
+                        ${esc(h.name)} <span class="stars">${'★'.repeat(Math.min(5, Math.floor(h.stars)))}</span>${ruBadge}
+                        <span class="matrix-sub">📍 ${esc(h.region)}${h.ort ? ' • ' + esc(h.ort) : ''}</span>
+                        ${getBadgeHTML(h)}
+                    </td>
+                    <td style="text-align:right; font-weight:900; font-size:14px; color:var(--primary);">${!isSoldOut ? h.currentPrice + ' €' : '-'}</td>
+                    <td style="text-align:right; font-size:11px; color:var(--muted); white-space:nowrap;"><b>${h.minPrice || '-'} €</b> / ${h.maxPrice || '-'} €</td>
+                    <td>${statusBadge}</td>
+                    ${timeCells}
+                </tr>`;
+            });
+            tbody += '</tbody>';
+            table.innerHTML = thead + tbody;
+        }
+
+        function renderCompare(filtered) {
+            const container = document.getElementById('compareContent');
+            let compHotels = allHotels.filter(h => chartPinned.includes(h.name));
+            let sourceHint = 'deine mit 📈 angehefteten Hotels';
+            if (compHotels.length === 0 && favorites.length > 0) { compHotels = allHotels.filter(h => favorites.includes(h.name)); sourceHint = 'deine ❤️ Favoriten'; }
+            if (compHotels.length === 0) { compHotels = filtered.filter(h => h.currentPrice !== null).slice(0, 4); sourceHint = 'die Top 4 günstigsten Hotels'; }
+
+            if (compHotels.length === 0) { container.innerHTML = `<div class="empty-state">Keine Hotels zum Vergleichen ausgewählt.</div>`; return; }
+
+            let html = `<div style="margin-bottom:10px; font-size:12px; font-weight:700; color:var(--muted);">Zeigt im Direkt-Vergleich: <b>${sourceHint}</b></div>`;
+            html += `<table class="compare-table"><tbody>`;
+
+            html += `<tr><th>Hotel</th>${compHotels.map(h => {
+                const ruBadge = h.ruFocus ? `<span style="font-size:14px; margin-left:4px;" title="Sehr beliebt bei russischen Gästen">🇷🇺</span>` : '';
+                return `<td style="font-weight:900; font-size:15px; background: url('${esc(h.image)}') top/cover; position:relative;">
+                    <div style="position:absolute; inset:0; background:rgba(255,255,255,0.85); z-index:1;"></div>
+                    <div style="position:relative; z-index:2;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px;">
+                            <span style="cursor:pointer; color:var(--primary);" onclick="openHotelModal('${h.name.replace(/'/g, "\\'")}')">${esc(h.name)}</span>${ruBadge}
+                            <button class="icon-btn" onclick="toggleChartPin('${h.name.replace(/'/g, "\\'")}', event)" title="Entfernen">✕</button>
+                        </div>
+                        <div style="color:#f59e0b; font-size:12px; margin-top:2px;">${'★'.repeat(Math.min(5, Math.floor(h.stars)))}</div>
+                    </div>
+                </td>`;
+            }).join('')}</tr>`;
+
+            html += `<tr><th>Aktueller Preis</th>${compHotels.map(h => `<td style="font-size:20px; font-weight:900; color:${h.currentPrice && h.currentPrice <= 2000 ? 'var(--green)' : 'var(--primary)'};">${h.currentPrice ? h.currentPrice + ' €' : '-'}</td>`).join('')}</tr>`;
+            html += `<tr><th>Bewertung (HC)</th>${compHotels.map(h => `<td>${getBadgeHTML(h) || '-'}</td>`).join('')}</tr>`;
+            html += `<tr><th>Meine Wertung</th>${compHotels.map(h => `<td style="font-size:18px;">${h.dbRating || '-'}</td>`).join('')}</tr>`;
+
+            html += `<tr><th>Trend / Letzter Check</th>${compHotels.map(h => {
+                if (h.diffPrev < 0) return `<td style="color:var(--green); font-weight:800;">↘ ${round2(h.diffPrev)} € günstiger</td>`;
+                if (h.diffPrev > 0) return `<td style="color:var(--red); font-weight:800;">↗ +${round2(h.diffPrev)} € teurer</td>`;
+                if (h.currentPrice === null) return `<td style="color:var(--muted); font-weight:700;">Zzt. nicht buchbar</td>`;
+                return `<td style="color:var(--muted); font-weight:700;">→ ±0 € unverändert</td>`;
+            }).join('')}</tr>`;
+
+            html += `<tr><th>Historisches Tief / Hoch</th>${compHotels.map(h => `<td>Tief: <b style="color:var(--green);">${h.minPrice || '-'} €</b><br>Hoch: <b style="color:var(--red);">${h.maxPrice || '-'} €</b><br><span style="font-size:11px; color:var(--muted);">Ø Durchschnitt: ${h.avgPrice || '-'} €</span></td>`).join('')}</tr>`;
+
+            html += `<tr><th>Abstand zum Bestpreis</th>${compHotels.map(h => {
+                if (!h.currentPrice || !h.minPrice) return `<td>-</td>`;
+                const diff = round2(h.currentPrice - h.minPrice);
+                return diff === 0 ? `<td style="background:#ecfdf5; color:#047857; font-weight:800;">🔥 Aktuell am Bestpreis!</td>` : `<td style="font-weight:700; color:#b45309;">+${diff} € über Tiefstpreis</td>`;
+            }).join('')}</tr>`;
+
+            html += `<tr><th>Region & Ort</th>${compHotels.map(h => `<td><b>${esc(h.region)}</b><br><span style="font-size:12px; color:var(--muted);">${esc(h.ort) || '-'}</span></td>`).join('')}</tr>`;
+            html += `<tr><th>Highlights</th>${compHotels.map(h => `<td><div class="tags-wrap">${h.tags.map(t => `<span class="tag-badge">${esc(t)}</span>`).join('')}</div></td>`).join('')}</tr>`;
+            html += `<tr><th>Aktion</th>${compHotels.map(h => `<td><div style="display:flex; gap:6px;"><button class="btn-detail" onclick="openHotelModal('${h.name.replace(/'/g, "\\'")}')">📊 Detail-Kurve</button><button class="offer-btn" onclick="openOffer('${h.name.replace(/'/g, "\\'")}', '${esc(h.url)}')" style="border:none;">Zum Angebot ↗</button></div></td>`).join('')}</tr>`;
+
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        function updateChart(filteredHotels) {
+            const withPrice = filteredHotels.filter(h => h.currentPrice !== null);
+            let chartHotels = [], subtitle = '';
+
+            if (chartPreset === 'PINNED' && chartPinned.length > 0) { chartHotels = allHotels.filter(h => chartPinned.includes(h.name)); subtitle = `Vergleicht deine ${chartHotels.length} mit 📈 angehefteten Hotels`; }
+            else if (chartPreset === 'FAVS' && favorites.length > 0) { chartHotels = allHotels.filter(h => favorites.includes(h.name) && h.currentPrice !== null); subtitle = `Vergleicht deine ${chartHotels.length} gespeicherten ❤️ Favoriten`; }
+            else if (chartPreset === 'DROPS') { chartHotels = [...withPrice].sort((a, b) => a.diffPrev - b.diffPrev).slice(0, 5); subtitle = `Top 5 Hotels mit der stärksten Preissenkung zum letzten Check`; }
+            else if (chartPreset === 'DEALS') { chartHotels = [...withPrice].sort((a, b) => a.diffFromMax - b.diffFromMax).slice(0, 5); subtitle = `Top 5 Hotels mit dem größten Preisabschlag gegenüber ihrem Höchstpreis`; }
+            else if (chartPreset === 'VOLATILE') { chartHotels = [...withPrice].sort((a, b) => b.spread - a.spread).slice(0, 5); subtitle = `Top 5 Hotels mit der größten Preisbewegung (Tief bis Hoch)`; }
+            else { chartHotels = [...withPrice].sort((a, b) => a.currentPrice - b.currentPrice).slice(0, 5); subtitle = `Top 5 günstigste Hotels der aktuellen Filterauswahl`; }
+
+            document.getElementById('chartSubtitle').textContent = subtitle;
+
+            const sig = [chartPreset, chartValueMode, chartHotels.map(h => `${h.id}:${h.currentPrice}`).join(',')].join('|');
+            if (chartInstance && sig === lastChartSig) return;
+            lastChartSig = sig;
+
+            let activeTimes = globalAllTimes.filter(t => chartHotels.some(h => h.timeMap[t.key] !== undefined && h.timeMap[t.key] !== null));
+            if (activeTimes.length === 0) activeTimes = globalAllTimes;
+
+            const labels = activeTimes.length > 0 ? activeTimes.map(t => t.label) : ['Aktuell'];
+            const colors = ['#1d4ed8', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777'];
+
+            const datasets = chartHotels.map((h, i) => {
+                const basePrice = h.firstPrice || h.currentPrice || 1;
+                const rawSeries = activeTimes.length > 0 ? activeTimes.map(t => (h.timeMap[t.key] !== undefined ? h.timeMap[t.key] : null)) : [h.currentPrice];
+                const transformedData = rawSeries.map(val => {
+                    if (val === null) return null;
+                    if (chartValueMode === 'DIFF') return round2(val - basePrice);
+                    if (chartValueMode === 'PCT') return Number((((val - basePrice) / basePrice) * 100).toFixed(2));
+                    return val;
+                });
+                return { label: h.name, data: transformedData, borderColor: colors[i % colors.length], backgroundColor: colors[i % colors.length], borderWidth: 2.5, pointRadius: 4, pointHoverRadius: 6, tension: 0.2, spanGaps: true };
+            });
+
+            const ctx = document.getElementById('comparisonChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11, weight: 'bold' } } },
+                        tooltip: { callbacks: { label: ctx => {
+                            const v = ctx.parsed.y;
+                            if (v === null || v === undefined) return `${ctx.dataset.label}: keine Messung`;
+                            if (chartValueMode === 'DIFF') return `${ctx.dataset.label}: ${v > 0 ? '+' : ''}${v} € seit Start`;
+                            if (chartValueMode === 'PCT') return `${ctx.dataset.label}: ${v > 0 ? '+' : ''}${v} % seit Start`;
+                            return `${ctx.dataset.label}: ${v} €`;
+                        } } }
+                    },
+                    scales: {
+                        y: { ticks: { callback: v => {
+                            if (chartValueMode === 'DIFF') return (v > 0 ? '+' : '') + v + ' €';
+                            if (chartValueMode === 'PCT') return (v > 0 ? '+' : '') + v + ' %';
+                            return v + ' €';
+                        } }, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        window.openHotelModal = function(hotelName) {
+            const h = allHotels.find(x => x.name === hotelName);
+            if (!h) return;
+            currentModalHotel = h;
+
+            const ruBadge = h.ruFocus ? `<span style="font-size:20px; margin-left:6px; vertical-align:middle;" title="Sehr beliebt bei russischen Gästen">🇷🇺</span>` : '';
+            document.getElementById('modalTitle').innerHTML = `${esc(h.name)} <span class="stars">${'★'.repeat(Math.min(5, Math.floor(h.stars)))}</span>${ruBadge}`;
+            document.getElementById('modalMeta').textContent = `📍 ${h.region}${h.ort ? ' • ' + h.ort : ''} • ${h.chronoPoints.length} Messpunkte gespeichert`;
+            document.getElementById('modalHCBadge').innerHTML = getBadgeHTML(h);
+
+            document.getElementById('modalOfferBtn').onclick = () => openOffer(h.name, h.url);
+
+            document.getElementById('modalTags').innerHTML = h.tags.map(t => `<span class="tag-badge">${esc(t)}</span>`).join('');
+
+            const diffAvg = (h.currentPrice && h.avgPrice) ? round2(h.currentPrice - h.avgPrice) : 0;
+            const avgText = diffAvg <= 0 ? `${diffAvg} € unter Ø` : `+${diffAvg} € über Ø`;
+
+            document.getElementById('modalKpis').innerHTML = `
+                <div class="modal-kpi">
+                    <div class="modal-kpi-label">Aktueller Preis</div>
+                    <div class="modal-kpi-val" style="color:var(--primary);">${h.currentPrice ? h.currentPrice + ' €' : '-'}</div>
+                </div>
+                <div class="modal-kpi">
+                    <div class="modal-kpi-label">Historisches Tief 🔥</div>
+                    <div class="modal-kpi-val" style="color:var(--green);">${h.minPrice ? h.minPrice + ' €' : '-'}</div>
+                </div>
+                <div class="modal-kpi">
+                    <div class="modal-kpi-label">Historisches Hoch</div>
+                    <div class="modal-kpi-val" style="color:var(--red);">${h.maxPrice ? h.maxPrice + ' €' : '-'}</div>
+                </div>
+                <div class="modal-kpi">
+                    <div class="modal-kpi-label">Ø Durchschnitt</div>
+                    <div class="modal-kpi-val">${h.avgPrice ? h.avgPrice + ' €' : '-'} <span style="font-size:11px; font-weight:700; color:${diffAvg <= 0 ? 'var(--green)' : 'var(--orange)'};">(${avgText})</span></div>
+                </div>
+            `;
+
+            const sel = document.getElementById('modalCompareSelect');
+            sel.innerHTML = `<option value="">-- Kein 2. Hotel (Nur Durchschnittslinie) --</option>`;
+            allHotels.filter(x => x.name !== h.name && x.currentPrice !== null).sort((a, b) => a.currentPrice - b.currentPrice)
+                .forEach(x => {
+                    const opt = document.createElement('option');
+                    opt.value = x.name;
+                    opt.textContent = `${x.name} (${x.currentPrice} € • ${x.region})`;
+                    sel.appendChild(opt);
+                });
+
+            const histTable = document.getElementById('modalHistoryTable');
+            let rowsHtml = `<thead><tr><th>Messzeitpunkt</th><th>Preis</th><th>Veränderung</th><th>Abstand zum Tiefstpreis</th></tr></thead><tbody>`;
+            for (let i = h.chronoPoints.length - 1; i >= 0; i--) {
+                const cur = h.chronoPoints[i], prv = i > 0 ? h.chronoPoints[i - 1] : null;
+                let deltaStr = '<span style="color:var(--muted);">Erste Messung</span>';
+                if (prv) {
+                    const d = round2(cur.price - prv.price);
+                    if (d < 0) deltaStr = `<span style="color:var(--green); font-weight:800;">↘ ${d} €</span>`;
+                    else if (d > 0) deltaStr = `<span style="color:var(--red); font-weight:800;">↗ +${d} €</span>`;
+                    else deltaStr = `<span style="color:var(--muted);">→ ±0 €</span>`;
+                }
+                const minDiff = round2(cur.price - h.minPrice);
+                const minBadge = minDiff === 0 ? `<span class="alltime-badge">🔥 Bestpreis</span>` : `+${minDiff} €`;
+                rowsHtml += `<tr><td>${cur.fullDate}</td><td style="font-weight:900; color:var(--primary);">${cur.price} €</td><td>${deltaStr}</td><td>${minBadge}</td></tr>`;
+            }
+            rowsHtml += `</tbody>`;
+            histTable.innerHTML = rowsHtml;
+
+            document.getElementById('detailModal').classList.add('is-open');
+            renderModalChart();
+        };
+
+        window.renderModalChart = function() {
+            const h = currentModalHotel, h2 = document.getElementById('modalCompareSelect').value ? allHotels.find(x => x.name === document.getElementById('modalCompareSelect').value) : null;
+            if (!h) return;
+
+            const activeTimes = globalAllTimes.filter(t => (h.timeMap[t.key] !== undefined && h.timeMap[t.key] !== null) || (h2 && h2.timeMap[t.key] !== undefined && h2.timeMap[t.key] !== null));
+            const labels = activeTimes.map(t => t.label);
+            const datasets = [{ label: h.name, data: activeTimes.map(t => h.timeMap[t.key] ?? null), borderColor: '#1d4ed8', backgroundColor: 'rgba(29, 78, 216, 0.08)', borderWidth: 3, pointRadius: 5, fill: !h2, tension: 0.2, spanGaps: true }];
+
+            if (h2) datasets.push({ label: h2.name, data: activeTimes.map(t => h2.timeMap[t.key] ?? null), borderColor: '#059669', backgroundColor: '#059669', borderWidth: 2.5, pointRadius: 4, tension: 0.2, spanGaps: true });
+            else if (h.avgPrice) datasets.push({ label: `Ø Durchschnitt (${h.avgPrice} €)`, data: activeTimes.map(() => h.avgPrice), borderColor: '#94a3b8', borderDash: [6, 6], borderWidth: 1.5, pointRadius: 0, fill: false });
+
+            const ctx = document.getElementById('modalSingleChart').getContext('2d');
+            if (modalChartInstance) modalChartInstance.destroy();
+            modalChartInstance = new Chart(ctx, { type: 'line', data: { labels, datasets }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'top' } }, scales: { y: { ticks: { callback: v => v + ' €' }, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } } } });
+        };
+
+        window.closeHotelModal = function() { document.getElementById('detailModal').classList.remove('is-open'); };
+
+        init();
+    </script>
+</body>
+</html>
