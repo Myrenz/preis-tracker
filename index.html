@@ -259,7 +259,7 @@
         <div class="header">
             <div>
                 <h1>🌴 Mein Türkei-Reiseportal (Juni 2027)</h1>
-                <p>2 Erwachsene • 7 Tage • Flexibles Fenster 14.-28.06. • Abflug FMO • Google Sheets</p>
+                <p>2 Erwachsene • 7 Nächte • Flexibles Fenster 14.-28.06. • Abflug FMO • Google Sheets</p>
             </div>
             <div class="header-right">
                 <div class="sync-status" id="syncStatus"><span>Verbinde mit Google Sheets...</span></div>
@@ -463,6 +463,8 @@
         let allHotels = [];
         let favorites = [];
         let chartPinned = JSON.parse(localStorage.getItem('chartPinned_2027') || '[]');
+        let deletedHotelsLocal = JSON.parse(localStorage.getItem('deletedHotels_2027') || '[]');
+
         let activeRegion = 'ALL';
         let activeTag = null;
         let onlyFavs = false;
@@ -532,6 +534,10 @@
         };
 
         window.rateHotel = function(hotelName, thumb, btnElement) {
+            if (thumb === '👎') {
+                window.deleteHotel(hotelName);
+                return;
+            }
             const container = btnElement.parentElement;
             container.querySelectorAll('button').forEach(b => b.style.opacity = '0.4');
             btnElement.style.opacity = '1';
@@ -539,19 +545,26 @@
             if (h) h.dbRating = thumb;
             callWebhook(hotelName, { type: 'rating', value: thumb });
         };
-        
+
         window.deleteHotel = function(hotelName, event) {
-            if(event) event.stopPropagation();
-            if(confirm(`Möchtest du das Hotel "${hotelName}" wirklich endgültig aus der Datenbank löschen?\nDas kann nicht rückgängig gemacht werden.`)) {
-                allHotels = allHotels.filter(h => h.name !== hotelName);
-                if(chartPinned.includes(hotelName)) clearChartPins();
-                if(favorites.includes(hotelName)) favorites = favorites.filter(n => n !== hotelName);
-                
-                const qs = new URLSearchParams({ action: 'delete_hotel', hotelName });
-                fetch(`${WEBHOOK_URL}?${qs}`, { mode: 'no-cors' });
-                
+            if (event) event.stopPropagation();
+            if (confirm(`Möchtest du "${hotelName}" wirklich endgültig aus Google Sheets und dem Dashboard löschen?`)) {
+                const h = hotelByName(hotelName);
+                const hId = h ? h.id : '';
+
+                deletedHotelsLocal.push(hotelName.toLowerCase());
+                localStorage.setItem('deletedHotels_2027', JSON.stringify(deletedHotelsLocal));
+
+                allHotels = allHotels.filter(x => x.name !== hotelName);
+                favorites = favorites.filter(n => n !== hotelName);
+                chartPinned = chartPinned.filter(n => n !== hotelName);
+                localStorage.setItem('chartPinned_2027', JSON.stringify(chartPinned));
+
+                const qs = new URLSearchParams({ action: 'delete_hotel', id: hId, hotelName });
+                fetch(`${WEBHOOK_URL}?${qs}`, { mode: 'no-cors' }).catch(() => {});
+
+                buildRegionTabs();
                 render();
-                alert(`"${hotelName}" wurde gelöscht.`);
             }
         };
 
@@ -805,6 +818,9 @@
                 const id = (rowObj['id'] || '').trim();
                 const name = fixMojibake((rowObj['name'] || '').trim());
                 if (!id || !name || id.toLowerCase() === 'id') return;
+
+                // Lokalen Papierkorb prüfen, damit gelöschte Hotels nicht durch Google-Sheets-Cache wiederkehren
+                if (deletedHotelsLocal.includes(name.toLowerCase())) return;
 
                 const activeRaw = String(rowObj['active'] ?? 'true').trim().toLowerCase();
                 if (!['true', '1', 'ja', 'yes', 'wahr'].includes(activeRaw)) return;
