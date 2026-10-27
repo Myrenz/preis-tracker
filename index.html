@@ -457,7 +457,7 @@
 
     <script>
         const SPREADSHEET_ID = "1MG0UwMZbmFoSxCdVp8pqspM5wgtgQlJGyoVesRXd5ag";
-        const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyL8no7Spl4eJMQiZk-hrFBbBhdIitHQF6T7vcCXq7h2tPrsCLyICTYNl4kr0xviLfGtg/exec";
+        const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxKwYhOMuEiqTidrqelTaVWpV4XpneyyHrKqHPqY5JSWjGFG_SFMrhi4Ms1axiiPyoaiA/exec";
         const FMO_SEARCH_QUERY = "?_offer=adults:2,airport:~FMO,departureDate:2027-06-14,duration:7,returnDate:2027-06-28,rooms:a-a";
 
         let allHotels = [];
@@ -819,7 +819,6 @@
                 const name = fixMojibake((rowObj['name'] || '').trim());
                 if (!id || !name || id.toLowerCase() === 'id') return;
 
-                // Lokalen Papierkorb prüfen, damit gelöschte Hotels nicht durch Google-Sheets-Cache wiederkehren
                 if (deletedHotelsLocal.includes(name.toLowerCase())) return;
 
                 const activeRaw = String(rowObj['active'] ?? 'true').trim().toLowerCase();
@@ -1332,8 +1331,8 @@
                     <div style="position:absolute; inset:0; background:rgba(255,255,255,0.85); z-index:1;"></div>
                     <div style="position:relative; z-index:2;">
                         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px;">
-                            <span style="cursor:pointer; color:var(--primary);" onclick="openHotelModal('${h.name.replace(/'/g, "\\'")}')">${esc(h.name)}</span>${ruBadge}
-                            <button class="icon-btn" onclick="toggleChartPin('${h.name.replace(/'/g, "\\'")}', event)" title="Entfernen">✕</button>
+                            <span style="cursor:pointer; color:var(--primary);" onclick="openHotelModal('${h.name.replace(/'/g, "\\\'")}')">${esc(h.name)}</span>${ruBadge}
+                            <button class="icon-btn" onclick="toggleChartPin('${h.name.replace(/'/g, "\\\'")}', event)" title="Entfernen">✕</button>
                         </div>
                         <div style="color:#f59e0b; font-size:12px; margin-top:2px;">${'★'.repeat(Math.min(5, Math.floor(h.stars)))}</div>
                     </div>
@@ -1361,7 +1360,7 @@
 
             html += `<tr><th>Region & Ort</th>${compHotels.map(h => `<td><b>${esc(h.region)}</b><br><span style="font-size:12px; color:var(--muted);">${esc(h.ort) || '-'}</span></td>`).join('')}</tr>`;
             html += `<tr><th>Highlights</th>${compHotels.map(h => `<td><div class="tags-wrap">${h.tags.map(t => `<span class="tag-badge">${esc(t)}</span>`).join('')}</div></td>`).join('')}</tr>`;
-            html += `<tr><th>Aktion</th>${compHotels.map(h => `<td><div style="display:flex; gap:6px;"><button class="btn-detail" onclick="openHotelModal('${h.name.replace(/'/g, "\\'")}')">📊 Detail-Kurve</button><button class="offer-btn" onclick="openOffer('${h.name.replace(/'/g, "\\'")}', '${esc(h.url)}')" style="border:none;">Zum Angebot ↗</button></div></td>`).join('')}</tr>`;
+            html += `<tr><th>Aktion</th>${compHotels.map(h => `<td><div style="display:flex; gap:6px;"><button class="btn-detail" onclick="openHotelModal('${h.name.replace(/'/g, "\\\'")}')">📊 Detail-Kurve</button><button class="offer-btn" onclick="openOffer('${h.name.replace(/'/g, "\\\'")}', '${esc(h.url)}')" style="border:none;">Zum Angebot ↗</button></div></td>`).join('')}</tr>`;
 
             html += `</tbody></table>`;
             container.innerHTML = html;
