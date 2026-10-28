@@ -366,10 +366,17 @@
                     <h2 class="chart-title">📈 Preisverlauf & Kurven-Vergleich</h2>
                     <div class="chart-sub" id="chartSubtitle">Chronologischer Verlauf der ausgewählten Hotels</div>
                 </div>
-                <div class="mode-switch">
-                    <button class="mode-btn active" id="modeBtnAbs" onclick="setChartValueMode('ABS')">💶 Preis (€)</button>
-                    <button class="mode-btn" id="modeBtnDiff" onclick="setChartValueMode('DIFF')">📊 Veränderung (± €)</button>
-                    <button class="mode-btn" id="modeBtnPct" onclick="setChartValueMode('PCT')">📈 Prozent (± %)</button>
+                <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                    <div class="mode-switch">
+                        <button class="mode-btn" id="timeBtn7" onclick="setChartTimeRange(7)">7 Tage</button>
+                        <button class="mode-btn" id="timeBtn30" onclick="setChartTimeRange(30)">30 Tage</button>
+                        <button class="mode-btn active" id="timeBtnALL" onclick="setChartTimeRange('ALL')">Alle</button>
+                    </div>
+                    <div class="mode-switch">
+                        <button class="mode-btn active" id="modeBtnAbs" onclick="setChartValueMode('ABS')">💶 Preis (€)</button>
+                        <button class="mode-btn" id="modeBtnDiff" onclick="setChartValueMode('DIFF')">📊 Veränderung (± €)</button>
+                        <button class="mode-btn" id="modeBtnPct" onclick="setChartValueMode('PCT')">📈 Prozent (± %)</button>
+                    </div>
                 </div>
             </div>
             <div class="chart-controls-bar">
@@ -479,6 +486,7 @@
         let viewMode = 'GRID'; 
         let chartPreset = chartPinned.length > 0 ? 'PINNED' : 'TOP5';
         let chartValueMode = 'ABS'; 
+        let chartTimeRange = 'ALL';
         let chartInstance = null;
         let lastChartSig = '';
         let modalChartInstance = null;
@@ -644,6 +652,24 @@
             document.getElementById('modeBtnPct').classList.toggle('active', mode === 'PCT');
             render();
         };
+
+        window.setChartTimeRange = function(days) {
+            chartTimeRange = days;
+            document.getElementById('timeBtn7').classList.toggle('active', days === 7);
+            document.getElementById('timeBtn30').classList.toggle('active', days === 30);
+            document.getElementById('timeBtnALL').classList.toggle('active', days === 'ALL');
+            render();
+            if (document.getElementById('detailModal').classList.contains('is-open')) {
+                renderModalChart();
+            }
+        };
+
+        function filterTimesByRange(timesArray) {
+            if (chartTimeRange === 'ALL' || timesArray.length === 0) return timesArray;
+            const now = new Date().getTime();
+            const cutoff = now - (chartTimeRange * 24 * 60 * 60 * 1000);
+            return timesArray.filter(t => t.sortMs >= cutoff);
+        }
 
         window.clearChartPins = function() {
             chartPinned = [];
@@ -1156,7 +1182,7 @@
             filtered.forEach(h => {
                 const isFav = favorites.includes(h.name);
                 const isPinned = chartPinned.includes(h.name);
-                const safeName = h.name.replace(/'/g, "\\'");
+                const safeName = h.name.replace(/'/g, "\'");
                 const isNewcomer = h.tags.some(t => t.toLowerCase() === 'newcomer' || t.toLowerCase() === 'neu');
                 const isSoldOut = h.currentPrice === null;
                 const ruBadge = h.ruFocus ? `<span style="font-size:16px; margin-left:6px; vertical-align:middle;" title="Sehr beliebt bei russischen Gästen">🇷🇺</span>` : '';
@@ -1269,7 +1295,7 @@
 
             let tbody = '<tbody>';
             filtered.forEach(h => {
-                const safeName = h.name.replace(/'/g, "\\'");
+                const safeName = h.name.replace(/'/g, "\'");
                 const isSoldOut = h.currentPrice === null;
                 const ruBadge = h.ruFocus ? `<span style="font-size:14px; margin-left:4px;" title="Sehr beliebt bei russischen Gästen">🇷🇺</span>` : '';
 
@@ -1331,8 +1357,8 @@
                     <div style="position:absolute; inset:0; background:rgba(255,255,255,0.85); z-index:1;"></div>
                     <div style="position:relative; z-index:2;">
                         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px;">
-                            <span style="cursor:pointer; color:var(--primary);" onclick="openHotelModal('${h.name.replace(/'/g, "\\\'")}')">${esc(h.name)}</span>${ruBadge}
-                            <button class="icon-btn" onclick="toggleChartPin('${h.name.replace(/'/g, "\\\'")}', event)" title="Entfernen">✕</button>
+                            <span style="cursor:pointer; color:var(--primary);" onclick="openHotelModal('${h.name.replace(/'/g, "\'")}')">${esc(h.name)}</span>${ruBadge}
+                            <button class="icon-btn" onclick="toggleChartPin('${h.name.replace(/'/g, "\'")}', event)" title="Entfernen">✕</button>
                         </div>
                         <div style="color:#f59e0b; font-size:12px; margin-top:2px;">${'★'.repeat(Math.min(5, Math.floor(h.stars)))}</div>
                     </div>
@@ -1360,7 +1386,7 @@
 
             html += `<tr><th>Region & Ort</th>${compHotels.map(h => `<td><b>${esc(h.region)}</b><br><span style="font-size:12px; color:var(--muted);">${esc(h.ort) || '-'}</span></td>`).join('')}</tr>`;
             html += `<tr><th>Highlights</th>${compHotels.map(h => `<td><div class="tags-wrap">${h.tags.map(t => `<span class="tag-badge">${esc(t)}</span>`).join('')}</div></td>`).join('')}</tr>`;
-            html += `<tr><th>Aktion</th>${compHotels.map(h => `<td><div style="display:flex; gap:6px;"><button class="btn-detail" onclick="openHotelModal('${h.name.replace(/'/g, "\\\'")}')">📊 Detail-Kurve</button><button class="offer-btn" onclick="openOffer('${h.name.replace(/'/g, "\\\'")}', '${esc(h.url)}')" style="border:none;">Zum Angebot ↗</button></div></td>`).join('')}</tr>`;
+            html += `<tr><th>Aktion</th>${compHotels.map(h => `<td><div style="display:flex; gap:6px;"><button class="btn-detail" onclick="openHotelModal('${h.name.replace(/'/g, "\'")}')">📊 Detail-Kurve</button><button class="offer-btn" onclick="openOffer('${h.name.replace(/'/g, "\'")}', '${esc(h.url)}')" style="border:none;">Zum Angebot ↗</button></div></td>`).join('')}</tr>`;
 
             html += `</tbody></table>`;
             container.innerHTML = html;
@@ -1379,12 +1405,13 @@
 
             document.getElementById('chartSubtitle').textContent = subtitle;
 
-            const sig = [chartPreset, chartValueMode, chartHotels.map(h => `${h.id}:${h.currentPrice}`).join(',')].join('|');
+            const sig = [chartPreset, chartValueMode, chartTimeRange, chartHotels.map(h => `${h.id}:${h.currentPrice}`).join(',')].join('|');
             if (chartInstance && sig === lastChartSig) return;
             lastChartSig = sig;
 
             let activeTimes = globalAllTimes.filter(t => chartHotels.some(h => h.timeMap[t.key] !== undefined && h.timeMap[t.key] !== null));
             if (activeTimes.length === 0) activeTimes = globalAllTimes;
+            activeTimes = filterTimesByRange(activeTimes);
 
             const labels = activeTimes.length > 0 ? activeTimes.map(t => t.label) : ['Aktuell'];
             const colors = ['#1d4ed8', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777'];
@@ -1500,7 +1527,9 @@
             const h = currentModalHotel, h2 = document.getElementById('modalCompareSelect').value ? allHotels.find(x => x.name === document.getElementById('modalCompareSelect').value) : null;
             if (!h) return;
 
-            const activeTimes = globalAllTimes.filter(t => (h.timeMap[t.key] !== undefined && h.timeMap[t.key] !== null) || (h2 && h2.timeMap[t.key] !== undefined && h2.timeMap[t.key] !== null));
+            let activeTimes = globalAllTimes.filter(t => (h.timeMap[t.key] !== undefined && h.timeMap[t.key] !== null) || (h2 && h2.timeMap[t.key] !== undefined && h2.timeMap[t.key] !== null));
+            activeTimes = filterTimesByRange(activeTimes);
+            
             const labels = activeTimes.map(t => t.label);
             const datasets = [{ label: h.name, data: activeTimes.map(t => h.timeMap[t.key] ?? null), borderColor: '#1d4ed8', backgroundColor: 'rgba(29, 78, 216, 0.08)', borderWidth: 3, pointRadius: 5, fill: !h2, tension: 0.2, spanGaps: true }];
 
